@@ -606,7 +606,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._plotting_tab_built = True
         self._plotting_tab_last_y_keys = frozenset(y_axis_keys)
 
-    def _on_x_axis_changed(self, model, item):
+    def _on_x_axis_changed(self, model, _item):
         all_history_keys = sorted(list(self._FlownexMain.simulation_data_history[0].keys()))
         idx = model.get_item_value_model().as_int
         if 0 <= idx < len(all_history_keys):
@@ -653,7 +653,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             )
             # New window means all previously stored widget refs are stale – drop them.
             for req in self._plot_requests:
-                req.pop("plot_widget", None)
+                req.pop("widgets_built", None)
                 req.pop("line_plots", None)
 
         history = self._FlownexMain.simulation_data_history
@@ -664,7 +664,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             return
 
         # Only do a full (expensive) rebuild when at least one request is missing its widgets.
-        all_built = all(req.get("plot_widget") is not None for req in self._plot_requests)
+        all_built = all(req.get("widgets_built") is not None for req in self._plot_requests)
         if not all_built:
             with self._plot_window.frame:
                 self._plot_window.frame.clear()
@@ -686,8 +686,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             return
 
         for request in self._plot_requests:
-            plot_widget = request.get("plot_widget")
-            if not plot_widget:
+            if not request.get("widgets_built"):
                 continue
 
             x_key = request["x_axis_key"]
@@ -770,7 +769,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
 
         # Store persistent widget references in the request dict for incremental updates.
         request["line_plots"] = line_plots
-        request["plot_widget"] = True  # sentinel: widgets have been created
+        request["widgets_built"] = True  # sentinel: widgets have been created for this request
 
     def _update_y_axis_labels(self, y_min, y_max, y_units, num_ticks=5):
         with ui.VStack(width=50, spacing=0):

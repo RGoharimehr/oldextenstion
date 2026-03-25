@@ -95,7 +95,13 @@ def map_outputs_to_prims(io_dir, outputs_filename="Outputs.csv", root="/World", 
         if not prim.IsValid() or not prim.GetPath().pathString.startswith(root) or prim.IsInstanceProxy():
             continue
 
-        name_to_match = (prim.GetAttribute("flownex:componentName").Get() or prim.GetName()) if prim.HasAttribute("flownex:componentName") else prim.GetName()
+        # Only match prims where the user has explicitly assigned a non-empty
+        # flownex:componentName value.  Prims that merely have the attribute
+        # created (but left blank) and prims that never had the attribute added
+        # are intentionally skipped – they should never be colored.
+        if not prim.HasAttribute("flownex:componentName"):
+            continue
+        name_to_match = prim.GetAttribute("flownex:componentName").Get()
         if not name_to_match:
             continue
 
