@@ -348,15 +348,21 @@ class FlownexMain:
                 self._heat_label.style = {"color": good_color if _Separator_Pressure_text != "N/A" else bad_color, "font_size": 20}
 
     def _update_ui_after_data_pull(self):
-        """This method is called after new data is fetched from Flownex."""
-        # This function now only needs to schedule the main update task.
-        # The logic has been moved to _update_ui_on_main_thread.
+        """Called on the main thread after every Flownex data fetch.
+
+        Responsibilities:
+          - Schedule lightweight label updates via the async helper.
+          - Refresh the Component Results / Key Parameters windows.
+          - Trigger _update_ui_and_visualization() on the UI extension so that:
+              * USD prim colors are updated with the latest output values.
+              * Open plot windows receive new data points.
+        """
         asyncio.ensure_future(self._update_ui_on_main_thread())
-        
-        # Also trigger the results window update
+
+        # Refresh the results display windows (incremental, no frame.clear()).
         self._UpdateResultsWindow()
 
-        # --- CRITICAL FIX: Call the main extension's update method ---
+        # Update visualization colors and plot data with the new fetch results.
         if hasattr(self, "ui_extension") and self.ui_extension:
             self.ui_extension._update_ui_and_visualization()
 

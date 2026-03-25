@@ -72,12 +72,21 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._is_ready = True
 
     def _update_ui_and_visualization(self):
-        """Safely called by FlownexMain during simulation updates."""
+        """Called by FlownexMain every time new data is fetched from Flownex.
+
+        This is the single entry-point that keeps the visualization live:
+          1. _apply_coloring_for_all_keys() – re-colors USD prims using the
+             freshly fetched output values from _FlownexMain._outputFields.
+          2. _update_plot_window_data()     – pushes new XY points into
+             existing plot widgets (data-only, no widget reconstruction).
+        """
         if not self._is_ready:
             return
 
+        # Re-color USD prims with the latest Flownex output values.
         self._apply_coloring_for_all_keys()
 
+        # Push new data into open plot widgets without rebuilding the UI.
         if self._plot_window and self._plot_window.visible:
             self._update_plot_window_data()
 
