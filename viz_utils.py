@@ -258,7 +258,15 @@ def visualize_property_layer(
         vmin, vmax = manual_min_bound, manual_max_bound
         log_text += f"Using manual bounds: [{vmin:.3g}, {vmax:.3g}] {unit}\n"
     else:
-        values = [float(val_str) for o in outputs_to_visualize if (val_str := output_fields.get(o.Key)) is not None and val_str != ""]
+        values = []
+        for o in outputs_to_visualize:
+            val_str = output_fields.get(o.Key)
+            if val_str is None or val_str == "":
+                continue
+            try:
+                values.append(float(val_str))
+            except (ValueError, TypeError):
+                pass
         vmin, vmax = (min(values), max(values)) if values else (0.0, 1.0)
         log_text += f"Using global auto-range: [{vmin:.3g}, {vmax:.3g}] {unit}\n"
     

@@ -1,7 +1,5 @@
-from email import header
 import os
 import threading
-from unittest import result
 import asyncio
 import omni.kit.commands
 import omni.ext
@@ -58,8 +56,8 @@ class FlownexMain:
         
     #UI Construction 
     def _build_Inputs_tab(self, mode: str = "dynamic"):
-        self._load_flownex_outputs() 
-        """Build the physics data reading tab"""   
+        """Build the physics data reading tab"""
+        self._load_flownex_outputs()
         with ui.VStack(spacing=2):             
             with ui.ScrollingFrame() as frame:        
                 if( mode == "dynamic"):
@@ -288,14 +286,17 @@ class FlownexMain:
     def _load_and_apply_flownex_inputs(self):
         configList = self._UserSConfig.LoadDynamicInputs()
         configList2 = self._UserSConfig.LoadStaticInputs()
-        #merge both lists
+        # Guard against None before attempting to merge
+        if configList is None:
+            configList = []
+        # Merge static inputs into dynamic list (avoid duplicates)
         if configList2 is not None:
             for item in configList2:
                 if item not in configList:
                     configList.append(item)
-        if configList is None or len(configList) == 0:
-            self._append_to_results("Input definition file Inputs.csv is missing or empty in "+ 
-                             self._UserSConfig.Setup.IOFileDirectory + 
+        if len(configList) == 0:
+            self._append_to_results("Input definition file Inputs.csv is missing or empty in "+
+                             self._UserSConfig.Setup.IOFileDirectory +
                              " Please configure the IO definition in the Configuration tab.")
             return False
         self._inputFields.clear()
@@ -445,15 +446,12 @@ class FlownexMain:
                 current_data_point[outputDef.Key] = value # Capture for history
 
         if current_data_point:
-           if current_data_point:
-            # --- START MODIFICATION: Add a time key ---
             time_step = float(self._UserSConfig.Setup.ResultPollingInterval)
-            # If history is empty, time is 0. Otherwise, it's the last time + time_step.
+            # If history is empty, time starts at 0. Otherwise increment from the last recorded time.
             last_time = self.simulation_data_history[-1].get("Time", -time_step) if self.simulation_data_history else -time_step
             current_data_point["Time"] = last_time + time_step
             self.simulation_data_history.append(current_data_point)
-            # --- END MODIFICATION ---
-            
+
             max_history = 300
             if len(self.simulation_data_history) > max_history:
                 self.simulation_data_history = self.simulation_data_history[-max_history:]
@@ -676,7 +674,7 @@ class FlownexMain:
 
     def _open_project(self):
         if self._FlownexAPI is not None:
-            self._FlownexAPI.LaunchFlownexIfNeeded(self._UserSConfig.UserSetup.FlownexProject)
+            self._FlownexAPI.LaunchFlownexIfNeeded(self._UserSConfig.Setup.FlownexProject)
 
     def _append_to_results(self, message):
         """Append a message to the results field, with a newline."""

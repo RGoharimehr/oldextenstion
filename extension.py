@@ -606,13 +606,11 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._plotting_tab_built = True
         self._plotting_tab_last_y_keys = frozenset(y_axis_keys)
 
-    def _on_x_axis_changed(self, model, item_index):
-        if item_index is None:
-            return
-
+    def _on_x_axis_changed(self, model, item):
         all_history_keys = sorted(list(self._FlownexMain.simulation_data_history[0].keys()))
-        if item_index < len(all_history_keys):
-            self._plot_x_axis_key = all_history_keys[item_index]
+        idx = model.get_item_value_model().as_int
+        if 0 <= idx < len(all_history_keys):
+            self._plot_x_axis_key = all_history_keys[idx]
             self._rebuild_plotting_tab()
 
     def _on_add_plot_request(self):

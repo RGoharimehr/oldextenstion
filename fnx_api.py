@@ -169,23 +169,20 @@ class FNXApi:
                     if len(splitted) >= 3:
                         m_pUnitGroup = UnitGroup.GetUnitGroupFromIdentifierName(splitted[1])
                         if m_pUnitGroup is None:
-                            errMsg = f"Error parsing property value: unknown unit group " + splitted[1] + " :" + componentIdentifier + "." + propertyIdentifier
-                            print(errMsg)
-                            return errMsg
+                            print(f"Error parsing property value: unknown unit group " + splitted[1] + " :" + componentIdentifier + "." + propertyIdentifier)
+                            return None
                         #assemble the full unit name from the rest of the splitted sections, in case a unit name contains a space
                         API_UnitName = ' '.join(splitted[2:])
                         API_Unit = m_pUnitGroup.UnitFromName(API_UnitName)
                         if API_Unit is not None:
                             UserUnit = m_pUnitGroup.UnitFromName(IOFile_unitTxt)
                             if UserUnit is None:
-                                errMsg = f"Unknown user unit in IO File" + IOFile_unitTxt + " :" + componentIdentifier + "." + propertyIdentifier
-                                print(errMsg)
-                                return errMsg
+                                print(f"Unknown user unit in IO File" + IOFile_unitTxt + " :" + componentIdentifier + "." + propertyIdentifier)
+                                return None
                             numericValue = UnitGroup.Convert(numericValue, API_Unit, UserUnit)                        
                         else:
-                            errMsg = f"Error parsing property value: unknown unit " + API_UnitName + " :" + componentIdentifier + "." + propertyIdentifier
-                            print(errMsg)
-                            return errMsg
+                            print(f"Error parsing property value: unknown unit " + API_UnitName + " :" + componentIdentifier + "." + propertyIdentifier)
+                            return None
                     return numericValue        
                 except Exception as e:
                     print(f"Error parsing property value: {e} :" + componentIdentifier + "." + propertyIdentifier)
