@@ -607,6 +607,8 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._plotting_tab_last_y_keys = frozenset(y_axis_keys)
 
     def _on_x_axis_changed(self, model, _item):
+        if not self._FlownexMain.simulation_data_history:
+            return
         all_history_keys = sorted(list(self._FlownexMain.simulation_data_history[0].keys()))
         idx = model.get_item_value_model().as_int
         if 0 <= idx < len(all_history_keys):
@@ -869,15 +871,24 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         if not plots_file_path:
             return
 
+        # Strip non-serializable Omni UI widget references (line_plots, widgets_built)
+        # before serializing.  Those keys are runtime state that must be rebuilt on
+        # reload anyway.
+        serializable_requests = [
+            {"x_axis_key": req["x_axis_key"], "y_axis_keys": req["y_axis_keys"]}
+            for req in self._plot_requests
+            if "x_axis_key" in req and "y_axis_keys" in req
+        ]
+
         data_to_save = {
             "x_axis_key": self._plot_x_axis_key,
-            "plot_requests": self._plot_requests,
+            "plot_requests": serializable_requests,
         }
 
         try:
             with open(plots_file_path, "w") as f:
                 json.dump(data_to_save, f, indent=2)
-        except IOError as e:
+        except (IOError, TypeError, ValueError) as e:
             print(f"Error saving plot selections: {e}")
 
 

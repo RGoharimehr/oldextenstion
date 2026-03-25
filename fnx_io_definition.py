@@ -172,7 +172,7 @@ class FlownexIO:
         return inputs
     
     def LoadDynamicInputs(self):
-        if self.UserSetup.IOFileDirectory == "":
+        if not self.UserSetup.IOFileDirectory:
             print("No IO data definition directory specified")
             return None
         #load csv file named Inputs.csv from self.UserSetup.IOFileDirectory into a list of InputDefinition
@@ -181,7 +181,7 @@ class FlownexIO:
         return dynamicInputs
 
     def LoadStaticInputs(self):
-        if self.UserSetup.IOFileDirectory == "":
+        if not self.UserSetup.IOFileDirectory:
             print("No IO data definition directory specified")
             return None
         #load csv file named StaticInputs.csv from self.UserSetup.IOFileDirectory into a list of InputDefinition
@@ -190,7 +190,7 @@ class FlownexIO:
         return staticInputs
 
     def LoadOutputs(self):
-        if self.UserSetup.IOFileDirectory == "":
+        if not self.UserSetup.IOFileDirectory:
             print("No IO data definition directory specified")
             return None
         #load csv file named Outputs.csv from self.UserSetup.IOFileDirectory into a list of OutputDefinition

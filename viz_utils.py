@@ -62,10 +62,14 @@ def _apply_color_to_prim(prim: Usd.Prim, rgb: Tuple[float, float, float]) -> int
         return 0
 
     colored_count = 0
-    light_api = UsdLux.LightAPI(prim)
-    
-    if light_api:
+
+    # prim.HasAPI() is the correct way to check whether an applied API schema is
+    # present on a prim.  UsdLux.LightAPI(prim).__bool__() only checks prim.IsValid()
+    # (inherited from UsdAPISchemaBase) and is therefore *always* True for any valid
+    # prim – which would send every geometry prim through the light branch.
+    if prim.HasAPI(UsdLux.LightAPI):
         try:
+            light_api = UsdLux.LightAPI(prim)
             color_attr = light_api.CreateColorAttr()
             color_attr.Set(Gf.Vec3f(*rgb))
             colored_count += 1
@@ -101,7 +105,7 @@ def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
             if not prim or not prim.IsValid():
                 continue
 
-            if UsdLux.LightAPI(prim) and prim.HasAttribute("color"):
+            if prim.HasAPI(UsdLux.LightAPI) and prim.HasAttribute("color"):
                 try: prim.GetAttribute("color").Block()
                 except Exception as e: print(f"[viz] Failed to block color on light {prim.GetPath()}: {e}")
             else:
