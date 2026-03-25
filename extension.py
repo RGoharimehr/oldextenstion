@@ -62,6 +62,9 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._property_bounds = {}
         self._current_viz_property = None
 
+        self._plotting_tab_built = False
+        self._plotting_tab_last_y_keys = frozenset()
+
         self._window = ui.Window(self._WindowText, width=500, height=600)
         with self._window.frame:
             self._build_window()
@@ -76,7 +79,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._apply_coloring_for_all_keys()
 
         if self._plot_window and self._plot_window.visible:
-            self._rebuild_and_update_plot_window()
+            self._update_plot_window_data()
 
     def _build_window(self):
         with ui.VStack():
@@ -153,7 +156,13 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._current_tab = tab_name
 
         if tab_name == "plotting":
-            self._rebuild_plotting_tab()
+            # Only rebuild the plotting tab when the available variables have changed
+            # or when the tab has never been built, not on every tab switch.
+            current_y_keys = frozenset(
+                k for k in self._get_plot_variable_options() if k != self._plot_x_axis_key
+            )
+            if not self._plotting_tab_built or current_y_keys != self._plotting_tab_last_y_keys:
+                self._rebuild_plotting_tab()
 
         style_selected = {"Button": {"background_color": cl("#0050E0"), "font_size": 16}}
         style_unselected = {"Button": {"background_color": cl(0.2), "font_size": 16}}
@@ -533,6 +542,8 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         if not plotting_frame:
             return
 
+        # Mark as not-built before clearing so re-entrancy is safe
+        self._plotting_tab_built = False
         plotting_frame.clear()
 
         all_keys = self._get_plot_variable_options()
@@ -544,6 +555,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                     "No simulation data recorded. Run a simulation first.",
                     style={"color": cl.yellow, "alignment": ui.Alignment.CENTER, "font_size": 16},
                 )
+                # Do not mark as built – will rebuild once data arrives
                 return
 
             if not y_axis_keys:
@@ -551,6 +563,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                     "No variables marked for plotting. Add 'Plot' to the 'Category' column in Outputs.csv.",
                     style={"color": cl.yellow, "alignment": ui.Alignment.CENTER, "font_size": 16},
                 )
+                # Do not mark as built – will rebuild once Plot outputs are configured
                 return
 
             with ui.VStack():
@@ -580,6 +593,9 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                     )
 
         self._load_and_apply_plot_definitions()
+        # Mark tab as fully built and record which y-keys were used
+        self._plotting_tab_built = True
+        self._plotting_tab_last_y_keys = frozenset(y_axis_keys)
 
     def _on_x_axis_changed(self, model, item_index):
         if item_index is None:
@@ -614,29 +630,45 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             self._plot_window.destroy()
             self._plot_window = None
 
-    # def _rebuild_and_update_plot_window(self):
-    #     if not self._plot_window or not self._plot_window.visible:
-    #         self._plot_window = ui.Window(
-    #             "Simulation Plot",
-    #             width=800,
-    #             height=700,
-    #             closed_fn=lambda: setattr(self, "_plot_window", None),
-    #         )
+    def _rebuild_and_update_plot_window(self):
+        """Build the plot window and all plot widgets once, then refresh data.
 
-    #     self._plot_window.frame.clear()
+        Called when the user adds a new plot request (user action).  The polling
+        cycle must NOT call this method – it should call _update_plot_window_data()
+        instead so that only XY data is pushed into existing widgets.
+        """
+        if not self._plot_window or not self._plot_window.visible:
+            self._plot_window = ui.Window(
+                "Simulation Plot",
+                width=800,
+                height=700,
+                closed_fn=lambda: setattr(self, "_plot_window", None),
+            )
+            # New window means all previously stored widget refs are stale – drop them.
+            for req in self._plot_requests:
+                req.pop("plot_widget", None)
+                req.pop("line_plots", None)
 
-    #     history = self._FlownexMain.simulation_data_history
-    #     if not history:
-    #         with self._plot_window.frame:
-    #             ui.Label("No simulation data to plot.", alignment=ui.Alignment.CENTER, style={"font_size": 18})
-    #         return
+        history = self._FlownexMain.simulation_data_history
+        if not history:
+            with self._plot_window.frame:
+                self._plot_window.frame.clear()
+                ui.Label("No simulation data to plot.", alignment=ui.Alignment.CENTER, style={"font_size": 18})
+            return
 
-    #     with self._plot_window.frame:
-    #         with ui.ScrollingFrame():
-    #             with ui.VStack(spacing=20, style={"padding": 10}):
-    #                 for i, request in enumerate(self._plot_requests):
-    #                     ui.Separator()
-    #                     self._build_single_plot_group(i, request)
+        # Only do a full (expensive) rebuild when at least one request is missing its widgets.
+        all_built = all(req.get("plot_widget") is not None for req in self._plot_requests)
+        if not all_built:
+            with self._plot_window.frame:
+                self._plot_window.frame.clear()
+                with ui.ScrollingFrame():
+                    with ui.VStack(spacing=20, style={"padding": 10}):
+                        for i, request in enumerate(self._plot_requests):
+                            ui.Separator()
+                            self._build_single_plot_group(i, request)
+
+        # Refresh data in existing plot widgets (lightweight).
+        self._update_plot_window_data()
 
     def _update_plot_window_data(self):
         if not self._plot_window or not self._plot_window.visible:
@@ -696,6 +728,10 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         x_scale_min = x_data_min - x_padding
         x_scale_max = x_data_max + x_padding
 
+        # Collect plot widget references so _update_plot_window_data() can push
+        # new XY data without recreating any UI elements.
+        line_plots = {}
+
         with ui.VStack(spacing=4, height=200):
             with ui.VStack(height=max(len(y_axis_keys) * 18, 18)):
                 for key in y_axis_keys:
@@ -721,8 +757,13 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                         plot.set_xy_data(data)
                         plot.scale_min = y_scale_min
                         plot.scale_max = y_scale_max
+                        line_plots[key] = plot
 
             self._update_x_axis_labels(x_scale_min, x_scale_max, x_axis_key)
+
+        # Store persistent widget references in the request dict for incremental updates.
+        request["line_plots"] = line_plots
+        request["plot_widget"] = True  # sentinel: widgets have been created
 
     def _update_y_axis_labels(self, y_min, y_max, y_units, num_ticks=5):
         with ui.VStack(width=50, spacing=0):
@@ -770,6 +811,8 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._FlownexMain.simulation_data_history.clear()
         self._plot_requests.clear()
         self._save_plot_definitions()
+        # Reset tab-built flag so next tab switch triggers a clean rebuild
+        self._plotting_tab_built = False
 
         if self._plot_window and self._plot_window.visible:
             self._rebuild_and_update_plot_window()
