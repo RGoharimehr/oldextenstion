@@ -237,7 +237,20 @@ def visualize_property_layer(
         log_field.model.set_value(log_text + "Error: No Flownex outputs loaded.")
         return None, None, None, None, newly_colored_prims
 
-    outputs_to_visualize = [out for out in fnx_outputs if selected_prop_name.lower() in out.PropertyIdentifier.lower()]
+    # Match on any human-readable field so that user-defined Category / Description
+    # values (e.g. Category="Temperature") drive the visualisation even when the
+    # Flownex PropertyIdentifier is an internal API name that doesn't contain the
+    # selected property word.
+    def _output_matches(out: OutputDefinition, name: str) -> bool:
+        n = name.lower()
+        return (
+            n in (out.PropertyIdentifier or "").lower()
+            or n in (out.Category or "").lower()
+            or n in (out.Description or "").lower()
+            or n in (out.Key or "").lower()
+        )
+
+    outputs_to_visualize = [out for out in fnx_outputs if _output_matches(out, selected_prop_name)]
     
     if not outputs_to_visualize:
         log_text += f"No output properties found containing '{selected_prop_name}'.\n"

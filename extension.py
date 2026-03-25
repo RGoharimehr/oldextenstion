@@ -64,6 +64,9 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
 
         self._plotting_tab_built = False
         self._plotting_tab_last_y_keys = frozenset()
+        # Guard: True while we are programmatically setting the x-axis combo so
+        # that _on_x_axis_changed does not trigger a recursive tab rebuild.
+        self._suppress_x_axis_callback = False
 
         self._window = ui.Window(self._WindowText, width=500, height=600)
         with self._window.frame:
@@ -607,6 +610,10 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         self._plotting_tab_last_y_keys = frozenset(y_axis_keys)
 
     def _on_x_axis_changed(self, model, _item):
+        # Skip when this callback was triggered by a programmatic set_value call
+        # inside _load_and_apply_plot_definitions to avoid an infinite rebuild loop.
+        if self._suppress_x_axis_callback:
+            return
         if not self._FlownexMain.simulation_data_history:
             return
         all_history_keys = sorted(list(self._FlownexMain.simulation_data_history[0].keys()))
@@ -854,7 +861,15 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             if self._plot_x_axis_key in all_history_keys:
                 try:
                     idx = all_history_keys.index(self._plot_x_axis_key)
-                    self._x_axis_combo.model.get_item_value_model().set_value(idx)
+                    # Suppress the item-changed callback while we programmatically
+                    # restore the saved selection so we don't trigger an infinite
+                    # rebuild loop (_on_x_axis_changed → _rebuild_plotting_tab →
+                    # _load_and_apply_plot_definitions → here).
+                    self._suppress_x_axis_callback = True
+                    try:
+                        self._x_axis_combo.model.get_item_value_model().set_value(idx)
+                    finally:
+                        self._suppress_x_axis_callback = False
                 except (ValueError, IndexError):
                     pass
 
