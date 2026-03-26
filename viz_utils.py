@@ -162,10 +162,12 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
     Implementation
     --------------
     * All edits go to the **session layer** so they are never persisted to disk.
-    * A ``UsdPreviewSurface`` material is defined in the session layer's
+    * ``primvars:displayColor`` is set directly on the Mesh prim so that the
+      colour is immediately visible in any USD viewer (including wireframe and
+      base-colour modes that do not resolve full material bindings).
+    * A ``UsdPreviewSurface`` material is also defined in the session layer's
       ``/_VizMaterials`` scope and bound on the Mesh prim with
-      ``strongerThanDescendants`` so the override is always deterministic,
-      regardless of any other binding opinions already present on the prim.
+      ``strongerThanDescendants`` for renderers that honour material bindings.
     * Any previous direct-binding relationship is cleared before the new bind
       is written to avoid stale relationship targets accumulating.
 
@@ -191,6 +193,18 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
     try:
         r, g, b = float(rgb[0]), float(rgb[1]), float(rgb[2])
 
+        # --- Direct colour attribute -----------------------------------------
+        # primvars:displayColor is the standard USD per-prim base colour.
+        # Setting it in the session layer ensures the colour is visible in
+        # every viewport mode (shaded, wireframe, base-colour) regardless of
+        # whether the renderer resolves the full material binding below.
+        mesh = UsdGeom.Mesh(prim)
+        disp_color_attr = mesh.GetDisplayColorAttr()
+        if not disp_color_attr or not disp_color_attr.IsValid():
+            disp_color_attr = mesh.CreateDisplayColorAttr()
+        disp_color_attr.Set(Vt.Vec3fArray([Gf.Vec3f(r, g, b)]))
+
+        # --- Material binding ------------------------------------------------
         mat_key = f"r{int(r * 255):03d}g{int(g * 255):03d}b{int(b * 255):03d}"
         mat_path = Sdf.Path(f"{_VIZ_SCOPE_PATH}/{mat_key}")
 
@@ -314,8 +328,8 @@ def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
     stage.SetEditTarget(Usd.EditTarget(session_layer))
 
     try:
-        # Remove the material-binding relationship we authored for each geometry
-        # prim and clear any light-colour overrides.
+        # Remove the material-binding relationship and displayColor override
+        # we authored for each geometry prim.
         for path_str in _viz_session_overrides:
             prim = stage.GetPrimAtPath(path_str)
             if not prim or not prim.IsValid():
@@ -327,6 +341,11 @@ def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
                 # ClearTargets(True) removes the relationship spec from the
                 # current edit target, restoring the weaker-layer binding.
                 rel.ClearTargets(True)
+            # Clear the primvars:displayColor override written by
+            # _apply_color_to_prim so the mesh reverts to its original colour.
+            disp_attr = prim.GetAttribute("primvars:displayColor")
+            if disp_attr and disp_attr.IsValid():
+                disp_attr.Clear()
             # For lights, clear the colour attribute override.
             if prim.HasAPI(UsdLux.LightAPI):
                 color_attr = prim.GetAttribute("inputs:color")
