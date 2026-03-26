@@ -157,26 +157,33 @@
 
     /* Panel header row */
     .fnx-panel-head {
-      padding: 9px 12px;
+      padding: 7px 10px;
       background: rgba(12,12,12,0.9);
       border-bottom: 1px solid rgba(89,89,89,0.22);
       display: flex; align-items: center; justify-content: space-between;
-      flex-shrink: 0;
+      flex-shrink: 0; gap: 6px;
     }
     .fnx-panel-title {
       font-size: 10px; font-weight: 700; color: var(--gray);
       text-transform: uppercase; letter-spacing: 0.5px;
     }
-    .head-btns { display: flex; gap: 6px; align-items: center; }
-
-    /* Simulation control row (below tab nav, always visible) */
-    .fnx-sim-row {
-      display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px;
-      background: rgba(12,12,12,0.75);
-      border-bottom: 1px solid rgba(89,89,89,0.18);
-      flex-shrink: 0;
+    .head-btns { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    /* UI scale selector */
+    #ui-scale-select {
+      font-size: 10px; padding: 2px 4px; background: rgba(40,40,40,0.8);
+      color: var(--gray); border: 1px solid rgba(89,89,89,0.5); border-radius: 5px;
+      cursor: pointer; max-width: 68px;
     }
-    .fnx-sim-row .btn { flex: 1 1 auto; white-space: nowrap; font-size: 10px !important; padding: 5px 8px !important; }
+    #ui-scale-select:hover { border-color: var(--green); }
+
+    /* Sim-control section inside Operating Conditions tab */
+    .fnx-sim-section {
+      display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px;
+    }
+    .fnx-sim-section .btn {
+      flex: 1 1 auto; white-space: nowrap;
+      font-size: 10px !important; padding: 5px 8px !important;
+    }
 
     /* Scrollable tab nav inside panel */
     .fnx-tabs-row {
@@ -466,25 +473,21 @@
   <!-- ── RIGHT CONTROL PANEL ── -->
   <div class="fnx-right">
 
-    <!-- Header: Dashboard Control + collapse toggle -->
+    <!-- Header: Dashboard Control + scale selector + collapse toggle -->
     <div class="fnx-panel-head">
       <span class="fnx-panel-title">Dashboard Control</span>
       <div class="head-btns">
+        <select id="ui-scale-select" title="UI Scale" onchange="applyScale(this.value)">
+          <option value="0.75">XS 75%</option>
+          <option value="0.85">SM 85%</option>
+          <option value="1.00" selected>MD 100%</option>
+          <option value="1.15">LG 115%</option>
+          <option value="1.30">XL 130%</option>
+          <option value="1.50">2X 150%</option>
+        </select>
         <button id="btn-toggle-panel" class="btn btn-outline-secondary btn-sm"
           onclick="toggleDashboard()" title="Hide Dashboard" style="padding:3px 7px!important;font-size:13px!important;">◀</button>
       </div>
-    </div>
-
-    <!-- Simulation control buttons (always visible, below the header) -->
-    <div class="fnx-sim-row">
-      <button id="btn-start-transient" class="btn btn-success"
-        onclick="startTransient()">▶ Start Transient</button>
-      <button id="btn-stop-transient" class="btn btn-danger"
-        onclick="stopTransient()" disabled>⏹ Stop Transient</button>
-      <button id="btn-load-defaults" class="btn btn-bridge"
-        onclick="runSteadyState(true)">⚡ Load Defaults &amp; Solve</button>
-      <button id="btn-steady-state" class="btn btn-secondary"
-        onclick="runSteadyState(false)">⚙ Solve Steady State</button>
     </div>
 
     <!-- Tab nav (scrollable pill bar) -->
@@ -510,6 +513,19 @@
           </div>
         </div>
         <div class="fnx-section">
+          <div class="fnx-section-title">Simulation Control</div>
+          <div class="fnx-sim-section">
+            <button id="btn-start-transient" class="btn btn-success"
+              onclick="startTransient()">▶ Start Transient</button>
+            <button id="btn-stop-transient" class="btn btn-danger"
+              onclick="stopTransient()" disabled>⏹ Stop Transient</button>
+            <button id="btn-load-defaults" class="btn btn-bridge"
+              onclick="runSteadyState(true)">⚡ Load Defaults &amp; Solve</button>
+            <button id="btn-steady-state" class="btn btn-secondary"
+              onclick="runSteadyState(false)">⚙ Solve Steady State</button>
+          </div>
+        </div>
+        <div class="fnx-section">
           <div class="fnx-section-title">Live Output Values</div>
           <div class="fnx-table-wrap">
             <table class="table table-sm table-dark table-hover mb-0 output-table">
@@ -519,10 +535,6 @@
               </tbody>
             </table>
           </div>
-        </div>
-        <div class="fnx-section">
-          <div class="fnx-section-title">Log</div>
-          <div id="log-area"></div>
         </div>
       </div>
 
@@ -713,6 +725,9 @@
     </div><!-- /tab-content -->
   </div><!-- /right panel -->
 
+  <!-- Hidden log-area: kept for JS compatibility, not shown to user -->
+  <div id="log-area" style="display:none"></div>
+
 </div><!-- /layout -->
 
 <!-- ═══ BOTTOM KPI BAR ═══ -->
@@ -750,6 +765,22 @@ const FMT_SMALL_DECIMALS  = 4;
 const FMT_LARGE_DECIMALS  = 2;
 // Category name used to select which outputs appear on the Plotting tab
 const PLOT_CATEGORY = "plot";
+
+// ============================================================
+// UI Scale (zoom) – persists to localStorage
+// ============================================================
+function applyScale(v) {
+  v = parseFloat(v) || 1;
+  document.documentElement.style.zoom = v;
+  localStorage.setItem('fnx-ui-scale', v);
+  // Keep the select in sync
+  const sel = document.getElementById('ui-scale-select');
+  if (sel) sel.value = v.toFixed(2);
+}
+(function restoreScale() {
+  const saved = parseFloat(localStorage.getItem('fnx-ui-scale'));
+  if (saved && saved !== 1) applyScale(saved);
+})();
 
 // ============================================================
 // Tab switching (custom – Bootstrap plugin not used here)
