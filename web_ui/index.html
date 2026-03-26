@@ -428,7 +428,8 @@
   <!-- ── LEFT COLORBAR ── -->
   <div class="fnx-colorbar">
     <div class="cbar-icon" title="Visualization Settings"
-      onclick="document.querySelector('[href=\'#tab-viz\']').click()">⚙</div>
+      onclick="switchTab(document.querySelector('#mainTabs .fnx-tab-btn:nth-child(5)'),'tab-viz')">⚙</div>
+    <div class="cbar-lbl" id="cbar-prop" style="writing-mode:vertical-rl;transform:rotate(180deg);max-height:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
     <div class="cbar-lbl" id="cbar-max">—</div>
     <div class="cbar-gradient" id="cbar-gradient"></div>
     <div class="cbar-lbl" id="cbar-min">—</div>
@@ -732,7 +733,7 @@ function switchTab(clickedBtn, paneId) {
   // Deactivate all tab buttons
   document.querySelectorAll('#mainTabs .fnx-tab-btn').forEach(b => b.classList.remove('active'));
   // Activate clicked button
-  clickedBtn.classList.add('active');
+  if (clickedBtn) clickedBtn.classList.add('active');
   // Hide all panes
   document.querySelectorAll('.tab-content .tab-pane').forEach(p => {
     p.classList.remove('show', 'active');
@@ -743,11 +744,66 @@ function switchTab(clickedBtn, paneId) {
 }
 
 // ============================================================
+// Colorbar legend – mirrors the Visualization tab settings
+// ============================================================
+const COLORMAP_GRADIENTS = {
+  // key: CSS linear-gradient string (top = high value, bottom = low value)
+  "viridis":   "linear-gradient(to bottom, #fde725, #7ad151, #22a884, #2a788e, #404587, #440154)",
+  "plasma":    "linear-gradient(to bottom, #f0f921, #fb8861, #cc4778, #7e03a8, #0d0887)",
+  "inferno":   "linear-gradient(to bottom, #fcffa4, #fca50a, #dd513a, #932667, #420a68, #000004)",
+  "magma":     "linear-gradient(to bottom, #fcfdbf, #fe9f6d, #de4968, #8c2981, #3b0f70, #000004)",
+  "cividis":   "linear-gradient(to bottom, #fee838, #c3b369, #8a8678, #575d6d, #3b496c, #00224e)",
+  "Blues":     "linear-gradient(to bottom, #08306b, #2171b5, #6baed6, #c6dbef, #f7fbff)",
+  "Greens":    "linear-gradient(to bottom, #00441b, #238b45, #74c476, #c7e9c0, #f7fcf5)",
+  "Reds":      "linear-gradient(to bottom, #67000d, #cb181d, #fb6a4a, #fcbba1, #fff5f0)",
+  "coolwarm":  "linear-gradient(to bottom, #b40426, #f7916a, #f2cbb7, #c0d4f5, #7b9ff9, #3b4cc0)",
+  "bwr":       "linear-gradient(to bottom, #ff0000, #ffffff, #0000ff)",
+  "seismic":   "linear-gradient(to bottom, #4d0000, #ff0000, #ffffff, #0000ff, #00004d)",
+  "jet":       "linear-gradient(to bottom, #7f0000, #ff0000, #ffff00, #00ffff, #0000ff, #00007f)",
+  "rainbow":   "linear-gradient(to bottom, #ff0000, #ff7700, #ffff00, #00ff00, #0000ff, #8b00ff)",
+  "gray":      "linear-gradient(to bottom, #ffffff, #888888, #000000)",
+};
+
+function updateColorbar(settings, propertyOptions, colormapOptions) {
+  // Colormap gradient
+  const cmapIdx  = settings.colormap_index ?? 0;
+  const cmapName = (colormapOptions || [])[cmapIdx] || "rainbow";
+  const gradient = COLORMAP_GRADIENTS[cmapName]
+                || COLORMAP_GRADIENTS["rainbow"];
+  document.getElementById("cbar-gradient").style.background = gradient;
+
+  // Property name label
+  const propIdx  = settings.property_index ?? 0;
+  const propName = (propertyOptions || [])[propIdx] || "";
+  document.getElementById("cbar-prop").textContent = propName;
+
+  // Min / Max labels
+  const hasManual = settings.manual_min !== null && settings.manual_max !== null;
+  if (hasManual) {
+    document.getElementById("cbar-max").textContent = fmtNum(settings.manual_max);
+    document.getElementById("cbar-min").textContent = fmtNum(settings.manual_min);
+  } else {
+    document.getElementById("cbar-max").textContent = "Auto";
+    document.getElementById("cbar-min").textContent = "Auto";
+  }
+}
+
+// Helper: format a number concisely for the colorbar label
+function fmtNum(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = parseFloat(v);
+  if (isNaN(n)) return String(v);
+  return Math.abs(n) < 10 ? n.toFixed(3) : n.toFixed(1);
+}
+
+// ============================================================
 // State
 // ============================================================
 let outputDefs      = [];
 let currentOutputs  = {};
 let statusPollTimer = null;
+let _vizPropertyOptions  = [];
+let _vizColormapOptions  = [];
 
 // ============================================================
 // Boot
@@ -1019,13 +1075,16 @@ async function loadVizSettings() {
   const data = await api("GET", "/api/viz/settings");
   if (!data) return;
 
+  _vizPropertyOptions = data.propertyOptions || [];
+  _vizColormapOptions = data.colormapOptions || [];
+
   const propSel = document.getElementById("viz-property");
-  propSel.innerHTML = (data.propertyOptions || [])
+  propSel.innerHTML = _vizPropertyOptions
     .map((p, i) => `<option value="${i}">${esc(p)}</option>`)
     .join("");
 
   const cmapSel = document.getElementById("viz-colormap");
-  cmapSel.innerHTML = (data.colormapOptions || [])
+  cmapSel.innerHTML = _vizColormapOptions
     .map((c, i) => `<option value="${i}">${esc(c)}</option>`)
     .join("");
 
@@ -1040,6 +1099,9 @@ async function loadVizSettings() {
     document.getElementById("viz-min").value = s.manual_min ?? "";
     document.getElementById("viz-max").value = s.manual_max ?? "";
   }
+
+  // Sync the left-side colorbar legend
+  updateColorbar(s, _vizPropertyOptions, _vizColormapOptions);
 }
 
 function toggleManualBounds(enabled) {
@@ -1060,7 +1122,11 @@ async function saveVizSettings() {
     manual_max: useManual && maxVal !== "" ? parseFloat(maxVal) : null,
   };
   const res = await api("POST", "/api/viz/settings", body);
-  if (res && res.ok) flash("viz-save-msg");
+  if (res && res.ok) {
+    flash("viz-save-msg");
+    // Sync colorbar to new settings
+    updateColorbar(body, _vizPropertyOptions, _vizColormapOptions);
+  }
 }
 
 // ============================================================
