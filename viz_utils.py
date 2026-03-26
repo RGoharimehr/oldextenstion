@@ -95,18 +95,18 @@ def _collect_geometry_prims(prim: Usd.Prim) -> List[Usd.Prim]:
     return result
 
 
-def _find_mesh_prims_by_flownex_name(
+def _find_prims_by_flownex_name(
     stage: Usd.Stage, component_id: str, root: str = "/World"
 ) -> List[Usd.Prim]:
     """
-    Scan the stage for **Mesh** prims that carry a non-empty
-    ``flownex:componentName`` attribute whose value matches *component_id*.
+    Scan the stage for prims that carry a non-empty ``flownex:componentName``
+    attribute whose value matches *component_id*.
 
-    This is the primary target-finding mechanism for visualization: instead of
-    trusting a pre-built mapping file that may point to Xform parents, we look
-    directly for the renderable Mesh prim that the user tagged with the Flownex
-    name.  Only prims of USD type ``"Mesh"`` are returned; Xforms and other
-    prim types are intentionally skipped.
+    This is the primary target-finding mechanism for visualization.  Any prim
+    type (Mesh, Xform, etc.) may be returned.  When the returned prim is not
+    itself a geometry prim (e.g. it is an Xform parent), ``_apply_color_to_prim``
+    will automatically walk its subtree via ``_collect_geometry_prims`` and bind
+    the colour material to every renderable descendant.
 
     Matching is case-insensitive with whitespace collapsed so that minor
     formatting differences between the CSV identifier and the USD attribute
@@ -118,7 +118,10 @@ def _find_mesh_prims_by_flownex_name(
     component_id : Flownex ComponentIdentifier string to match.
     root         : stage path to start traversal from (default ``"/World"``).
 
-    Returns a (possibly empty) list of matching Mesh prims.
+    Returns
+    -------
+    List[Usd.Prim]
+        A (possibly empty) list of matching prims.
     """
     def _norm(s: str) -> str:
         return "".join((s or "").split()).lower()
@@ -134,8 +137,6 @@ def _find_mesh_prims_by_flownex_name(
     )
     for prim in traverse:
         if not prim.IsActive() or not prim.IsDefined() or prim.IsInstanceProxy():
-            continue
-        if prim.GetTypeName() != "Mesh":
             continue
         attr = prim.GetAttribute("flownex:componentName")
         if not attr or not attr.IsValid():
@@ -364,6 +365,19 @@ def _load_component_to_prim_map(mapping_json_path: str) -> Dict[str, str]:
         return data
 
 
+def _normalize_prim_paths(paths) -> List[str]:
+    """
+    Ensure *paths* is always a ``List[str]``.
+
+    Older ``FlownexMapping.json`` files stored prim paths as plain strings
+    rather than single-element lists.  This helper normalises both formats so
+    callers can always iterate safely.
+    """
+    if isinstance(paths, str):
+        return [paths]
+    return list(paths) if paths else []
+
+
 def _visualize_single_component(
     output_def: OutputDefinition, value: float, comp_to_prim_map: Dict[str, List[str]], 
     property_ranges: Dict[str, Dict[str, float]], cmap: str, usd_context=None,
@@ -374,17 +388,19 @@ def _visualize_single_component(
 
     Target-finding strategy
     -----------------------
-    1. **Direct Mesh scan** (primary): the stage is scanned for ``Mesh`` prims
-       whose ``flownex:componentName`` attribute is non-empty and matches
-       *component_id*.  This directly targets the renderable geometry without
-       relying on a pre-built JSON mapping that might point to Xform parents.
-    2. **JSON mapping fallback**: if no Mesh prims are found via the direct scan
-       the pre-built ``comp_to_prim_map`` is consulted and the geometry
+    1. **Direct stage scan** (primary): the stage is scanned for prims of any
+       type whose ``flownex:componentName`` attribute is non-empty and matches
+       *component_id*.  If a matching prim is itself a geometry prim it is
+       colored directly; if it is an Xform (or other assembly prim)
+       ``_apply_color_to_prim`` automatically walks its subtree to color all
+       renderable geometry descendants.
+    2. **JSON mapping fallback**: if no tagged prims are found via the direct
+       scan the pre-built ``comp_to_prim_map`` is consulted and the geometry
        descendants of each stored prim path are colored via
        ``_apply_color_to_prim``.
 
     The ``"colored_paths"`` list in the returned dict always contains the paths
-    of the prims that were actually targeted (Mesh prim paths for the direct
+    of the prims that were actually targeted (tagged prim paths for the direct
     scan, mapping prim paths for the fallback).  Callers use this to determine
     which components received a color so that a fallback "no-data" material can
     be applied to the remainder.
@@ -410,21 +426,21 @@ def _visualize_single_component(
 
     total_colored = 0
 
-    # --- Primary: scan for Mesh prims tagged with this component name ---
-    mesh_prims = _find_mesh_prims_by_flownex_name(stage, component_id)
-    if mesh_prims:
-        for mesh_prim in mesh_prims:
-            colored_count = _apply_color_to_prim(stage, mesh_prim, rgb)
+    # --- Primary: scan for prims tagged with this component name ---
+    tagged_prims = _find_prims_by_flownex_name(stage, component_id)
+    if tagged_prims:
+        for tagged_prim in tagged_prims:
+            colored_count = _apply_color_to_prim(stage, tagged_prim, rgb)
             if colored_count > 0:
                 total_colored += colored_count
-                info["colored_paths"].append(mesh_prim.GetPath().pathString)
+                info["colored_paths"].append(tagged_prim.GetPath().pathString)
     else:
         # --- Fallback: use the pre-built JSON mapping ---
         prim_paths = comp_to_prim_map.get(component_id)
         if not prim_paths:
             info["message"] = "Not found in stage scan or mapping file"
             return info
-        for prim_path in prim_paths:
+        for prim_path in _normalize_prim_paths(prim_paths):
             prim = stage.GetPrimAtPath(prim_path)
             colored_count = _apply_color_to_prim(stage, prim, rgb)
             if colored_count > 0:
@@ -453,7 +469,12 @@ def visualize_property_layer(
         return None, None, None, None, set()
 
     stage = omni.usd.get_context().get_stage()
-    if stage and prims_to_reset:
+    if not stage:
+        if log_field:
+            log_field.model.set_value("Error: No USD stage is currently open.")
+        return None, None, None, None, set()
+
+    if prims_to_reset:
         _reset_prim_colors(stage, prims_to_reset)
     
     newly_colored_prims = set()
@@ -469,15 +490,18 @@ def visualize_property_layer(
     io_dir = user_config.Setup.IOFileDirectory
     mapping_json_path = os.path.join(io_dir, "FlownexMapping.json")
     
+    # The mapping file is used as a fallback only.  The primary coloring path
+    # scans the stage directly for prims tagged with ``flownex:componentName``,
+    # so a missing mapping file is not fatal.
     if not os.path.exists(mapping_json_path):
-        log_field.model.set_value(log_text + f"Error: Mapping file not found at {mapping_json_path}")
-        return None, None, None, None, newly_colored_prims
-
-    try:
-        comp_to_prim_map = _load_component_to_prim_map(mapping_json_path)
-    except Exception as e:
-        log_field.model.set_value(log_text + f"Error loading mapping file: {e}")
-        return None, None, None, None, newly_colored_prims
+        log_text += f"Note: Mapping file not found at {mapping_json_path}. Will rely on stage scan only.\n"
+        comp_to_prim_map: Dict[str, List[str]] = {}
+    else:
+        try:
+            comp_to_prim_map = _load_component_to_prim_map(mapping_json_path)
+        except Exception as e:
+            log_text += f"Warning: Could not load mapping file ({e}). Will rely on stage scan only.\n"
+            comp_to_prim_map = {}
 
     if not fnx_outputs:
         log_field.model.set_value(log_text + "Error: No Flownex outputs loaded.")
@@ -503,11 +527,11 @@ def visualize_property_layer(
         log_text += f"Binding fallback material '{_FALLBACK_MATERIAL_PATH}' to all prims in the mapping file.\n"
         log_field.model.set_value(log_text)
 
-        all_mapped_paths = {path for paths in comp_to_prim_map.values() for path in paths}
-        for path_str in all_mapped_paths:
-            prim = stage.GetPrimAtPath(path_str)
-            if _apply_fallback_material_to_prim(stage, prim) > 0:
-                newly_colored_prims.add(path_str)
+        for paths in comp_to_prim_map.values():
+            for path_str in _normalize_prim_paths(paths):
+                prim = stage.GetPrimAtPath(path_str)
+                if _apply_fallback_material_to_prim(stage, prim) > 0:
+                    newly_colored_prims.add(path_str)
 
         return None, None, None, None, newly_colored_prims
 
@@ -574,7 +598,7 @@ def visualize_property_layer(
     for comp_id, paths in comp_to_prim_map.items():
         if comp_id in colored_component_ids:
             continue
-        for path_str in paths:
+        for path_str in _normalize_prim_paths(paths):
             prim = stage.GetPrimAtPath(path_str)
             if _apply_fallback_material_to_prim(stage, prim) > 0:
                 newly_colored_prims.add(path_str)
