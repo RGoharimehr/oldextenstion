@@ -444,7 +444,7 @@
   <!-- ── LEFT COLORBAR ── -->
   <div class="fnx-colorbar">
     <div class="cbar-icon" title="Visualization Settings"
-      onclick="switchTab(document.querySelector('#mainTabs .fnx-tab-btn:nth-child(5)'),'tab-viz')">⚙</div>
+      onclick="openVizTab()">⚙</div>
     <div class="cbar-lbl" id="cbar-prop" style="writing-mode:vertical-rl;transform:rotate(180deg);max-height:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
     <div class="cbar-lbl" id="cbar-max">—</div>
     <div class="cbar-gradient" id="cbar-gradient"></div>
@@ -810,6 +810,21 @@ function toggleDashboard() {
   if (btnToggle) btnToggle.textContent = collapsed ? '▶' : '◀';
   if (btnToggle) btnToggle.title = collapsed ? 'Show Dashboard' : 'Hide Dashboard';
   if (btnReopen) btnReopen.style.display = collapsed ? 'block' : 'none';
+}
+
+// ============================================================
+// Open Visualization tab – unhides the dashboard first if needed
+// ============================================================
+function openVizTab() {
+  const panel     = document.querySelector('.fnx-right');
+  const btnToggle = document.getElementById('btn-toggle-panel');
+  const btnReopen = document.getElementById('btn-panel-reopen');
+  if (panel && panel.classList.contains('fnx-right-collapsed')) {
+    panel.classList.remove('fnx-right-collapsed');
+    if (btnToggle) { btnToggle.textContent = '◀'; btnToggle.title = 'Hide Dashboard'; }
+    if (btnReopen) btnReopen.style.display = 'none';
+  }
+  switchTab(document.querySelector('#mainTabs .fnx-tab-btn:nth-child(5)'), 'tab-viz');
 }
 
 // ============================================================
