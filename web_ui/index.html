@@ -155,35 +155,47 @@
     }
     #btn-panel-reopen:hover { color: var(--green); }
 
-    /* Panel header row */
+    /* Panel header row: title + BRIDGE / START */
     .fnx-panel-head {
-      padding: 7px 10px;
+      padding: 9px 12px;
       background: rgba(12,12,12,0.9);
       border-bottom: 1px solid rgba(89,89,89,0.22);
       display: flex; align-items: center; justify-content: space-between;
-      flex-shrink: 0; gap: 6px;
+      flex-shrink: 0;
     }
     .fnx-panel-title {
       font-size: 10px; font-weight: 700; color: var(--gray);
       text-transform: uppercase; letter-spacing: 0.5px;
     }
-    .head-btns { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
-    /* UI scale selector */
-    #ui-scale-select {
-      font-size: 10px; padding: 2px 4px; background: rgba(40,40,40,0.8);
-      color: var(--gray); border: 1px solid rgba(89,89,89,0.5); border-radius: 5px;
-      cursor: pointer; max-width: 52px;
-    }
-    #ui-scale-select:hover { border-color: var(--green); }
+    .head-btns { display: flex; gap: 6px; align-items: center; }
 
-    /* Sim-control section inside Operating Conditions tab */
-    .fnx-sim-section {
-      display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px;
+    /* Mode row (SIMULATE active | STEADY STATE | STOP) */
+    .fnx-mode-row {
+      display: flex; gap: 3px; padding: 6px 8px;
+      background: rgba(15,15,15,0.7);
+      border-bottom: 1px solid rgba(89,89,89,0.18);
+      flex-shrink: 0;
     }
-    .fnx-sim-section .btn {
-      flex: 1 1 auto; white-space: nowrap;
-      font-size: 10px !important; padding: 5px 8px !important;
+    .fnx-mode-btn {
+      flex: 1; padding: 5px 4px; font-size: 10px; font-weight: 700;
+      border-radius: 8px; border: 1px solid rgba(89,89,89,0.45);
+      background: rgba(40,40,40,0.6); color: var(--gray);
+      cursor: pointer; transition: all 0.2s; text-align: center;
+      white-space: nowrap; line-height: 1.3;
     }
+    .fnx-mode-btn:hover:not(:disabled) {
+      background: rgba(70,70,70,0.6); color: var(--white);
+    }
+    .fnx-mode-btn.mode-active {
+      background: var(--green); color: #1a1a1a;
+      border-color: var(--green);
+      box-shadow: 0 0 10px rgba(134,239,71,0.4);
+    }
+    .fnx-mode-btn.mode-stop { color: var(--red); border-color: rgba(255,51,51,0.4); }
+    .fnx-mode-btn.mode-stop:hover:not(:disabled) {
+      background: rgba(255,51,51,0.15);
+    }
+    .fnx-mode-btn:disabled { opacity: 0.32; cursor: not-allowed; }
 
     /* Scrollable tab nav inside panel */
     .fnx-tabs-row {
@@ -444,7 +456,7 @@
   <!-- ── LEFT COLORBAR ── -->
   <div class="fnx-colorbar">
     <div class="cbar-icon" title="Visualization Settings"
-      onclick="openVizTab()">⚙</div>
+      onclick="switchTab(document.querySelector('#mainTabs .fnx-tab-btn:nth-child(5)'),'tab-viz')">⚙</div>
     <div class="cbar-lbl" id="cbar-prop" style="writing-mode:vertical-rl;transform:rotate(180deg);max-height:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
     <div class="cbar-lbl" id="cbar-max">—</div>
     <div class="cbar-gradient" id="cbar-gradient"></div>
@@ -473,21 +485,26 @@
   <!-- ── RIGHT CONTROL PANEL ── -->
   <div class="fnx-right">
 
-    <!-- Header: Dashboard Control + scale selector + collapse toggle -->
+    <!-- Header: Dashboard Control + BRIDGE / START -->
     <div class="fnx-panel-head">
       <span class="fnx-panel-title">Dashboard Control</span>
       <div class="head-btns">
-        <select id="ui-scale-select" title="UI Scale" onchange="applyScale(this.value)">
-          <option value="0.75">75%</option>
-          <option value="0.85">85%</option>
-          <option value="1.00" selected>100%</option>
-          <option value="1.15">115%</option>
-          <option value="1.30">130%</option>
-          <option value="1.50">150%</option>
-        </select>
+        <button id="btn-load-defaults" class="btn btn-bridge"
+          onclick="runSteadyState(true)" title="Load Defaults &amp; Solve">BRIDGE</button>
+        <button id="btn-start-transient" class="btn btn-success btn-sm"
+          onclick="startTransient()">START</button>
         <button id="btn-toggle-panel" class="btn btn-outline-secondary btn-sm"
           onclick="toggleDashboard()" title="Hide Dashboard" style="padding:3px 7px!important;font-size:13px!important;">◀</button>
       </div>
+    </div>
+
+    <!-- Mode row: SIMULATE (active label) | STEADY STATE | STOP -->
+    <div class="fnx-mode-row">
+      <div class="fnx-mode-btn mode-active">SIMULATE</div>
+      <button id="btn-steady-state" class="fnx-mode-btn"
+        onclick="runSteadyState(false)">STEADY STATE</button>
+      <button id="btn-stop-transient" class="fnx-mode-btn mode-stop"
+        onclick="stopTransient()" disabled>STOP</button>
     </div>
 
     <!-- Tab nav (scrollable pill bar) -->
@@ -513,19 +530,6 @@
           </div>
         </div>
         <div class="fnx-section">
-          <div class="fnx-section-title">Simulation Control</div>
-          <div class="fnx-sim-section">
-            <button id="btn-start-transient" class="btn btn-success"
-              onclick="startTransient()">▶ Start Transient</button>
-            <button id="btn-stop-transient" class="btn btn-danger"
-              onclick="stopTransient()" disabled>⏹ Stop Transient</button>
-            <button id="btn-load-defaults" class="btn btn-bridge"
-              onclick="runSteadyState(true)">⚡ Load Defaults &amp; Solve</button>
-            <button id="btn-steady-state" class="btn btn-secondary"
-              onclick="runSteadyState(false)">⚙ Solve Steady State</button>
-          </div>
-        </div>
-        <div class="fnx-section">
           <div class="fnx-section-title">Live Output Values</div>
           <div class="fnx-table-wrap">
             <table class="table table-sm table-dark table-hover mb-0 output-table">
@@ -535,6 +539,10 @@
               </tbody>
             </table>
           </div>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Log</div>
+          <div id="log-area"></div>
         </div>
       </div>
 
@@ -725,9 +733,6 @@
     </div><!-- /tab-content -->
   </div><!-- /right panel -->
 
-  <!-- Hidden log-area: kept for JS compatibility, not shown to user -->
-  <div id="log-area" style="display:none"></div>
-
 </div><!-- /layout -->
 
 <!-- ═══ BOTTOM KPI BAR ═══ -->
@@ -767,22 +772,6 @@ const FMT_LARGE_DECIMALS  = 2;
 const PLOT_CATEGORY = "plot";
 
 // ============================================================
-// UI Scale (zoom) – persists to localStorage
-// ============================================================
-function applyScale(v) {
-  v = parseFloat(v) || 1;
-  document.documentElement.style.zoom = v;
-  localStorage.setItem('fnx-ui-scale', v);
-  // Keep the select in sync
-  const sel = document.getElementById('ui-scale-select');
-  if (sel) sel.value = v.toFixed(2);
-}
-(function restoreScale() {
-  const saved = parseFloat(localStorage.getItem('fnx-ui-scale'));
-  if (saved && saved !== 1) applyScale(saved);
-})();
-
-// ============================================================
 // Tab switching (custom – Bootstrap plugin not used here)
 // ============================================================
 function switchTab(clickedBtn, paneId) {
@@ -809,22 +798,7 @@ function toggleDashboard() {
   const collapsed = panel.classList.toggle('fnx-right-collapsed');
   if (btnToggle) btnToggle.textContent = collapsed ? '▶' : '◀';
   if (btnToggle) btnToggle.title = collapsed ? 'Show Dashboard' : 'Hide Dashboard';
-  if (btnReopen) btnReopen.style.display = collapsed ? 'block' : 'none';
-}
-
-// ============================================================
-// Open Visualization tab – unhides the dashboard first if needed
-// ============================================================
-function openVizTab() {
-  const panel     = document.querySelector('.fnx-right');
-  const btnToggle = document.getElementById('btn-toggle-panel');
-  const btnReopen = document.getElementById('btn-panel-reopen');
-  if (panel && panel.classList.contains('fnx-right-collapsed')) {
-    panel.classList.remove('fnx-right-collapsed');
-    if (btnToggle) { btnToggle.textContent = '◀'; btnToggle.title = 'Hide Dashboard'; }
-    if (btnReopen) btnReopen.style.display = 'none';
-  }
-  switchTab(document.querySelector('#mainTabs .fnx-tab-btn:nth-child(5)'), 'tab-viz');
+  if (btnReopen) btnReopen.style.display = collapsed ? '' : 'none';
 }
 
 // ============================================================
