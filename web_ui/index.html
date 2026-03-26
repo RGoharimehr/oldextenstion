@@ -164,13 +164,8 @@
       flex-shrink: 0; gap: 6px;
     }
     .fnx-panel-title {
-      font-size: 15px; font-weight: 900; letter-spacing: 1px;
-      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: linear-gradient(to right, #86ef47, #5ab5d5);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      text-transform: uppercase;
+      font-size: 10px; font-weight: 700; color: var(--gray);
+      text-transform: uppercase; letter-spacing: 0.5px;
     }
     .head-btns { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
     /* UI scale selector */
@@ -478,9 +473,9 @@
   <!-- ── RIGHT CONTROL PANEL ── -->
   <div class="fnx-right">
 
-    <!-- Header: OMNICOOL + scale selector + collapse toggle -->
+    <!-- Header: Dashboard Control + scale selector + collapse toggle -->
     <div class="fnx-panel-head">
-      <span class="fnx-panel-title">OMNICOOL.</span>
+      <span class="fnx-panel-title">Dashboard Control</span>
       <div class="head-btns">
         <select id="ui-scale-select" title="UI Scale" onchange="applyScale(this.value)">
           <option value="0.75">75%</option>
