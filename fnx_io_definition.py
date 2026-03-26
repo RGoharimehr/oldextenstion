@@ -172,28 +172,28 @@ class FlownexIO:
         return inputs
     
     def LoadDynamicInputs(self):
-        if self.UserSetup.FlownexProject == "":
-            print("No IO data definition path specified")
+        if not self.UserSetup.IOFileDirectory:
+            print("No IO data definition directory specified")
             return None
-        #load scv file named Inputs.csv from self.UserSetup.IOFileDirectory into a list of InputDefinition
+        #load csv file named Inputs.csv from self.UserSetup.IOFileDirectory into a list of InputDefinition
         inputFile = os.path.join(self.UserSetup.IOFileDirectory, "Inputs.csv")
-        denamicInputs = self.LoadAnInputFile(inputFile)       
-        return denamicInputs
-    
+        dynamicInputs = self.LoadAnInputFile(inputFile)
+        return dynamicInputs
+
     def LoadStaticInputs(self):
-        if self.UserSetup.FlownexProject == "":
-            print("No IO data definition path specified")
+        if not self.UserSetup.IOFileDirectory:
+            print("No IO data definition directory specified")
             return None
-        #load scv file named Inputs.csv from self.UserSetup.IOFileDirectory into a list of InputDefinition
+        #load csv file named StaticInputs.csv from self.UserSetup.IOFileDirectory into a list of InputDefinition
         staticInputFile = os.path.join(self.UserSetup.IOFileDirectory, "StaticInputs.csv")
-        staticInputs = self.LoadAnInputFile(staticInputFile)        
-        return  staticInputs    
+        staticInputs = self.LoadAnInputFile(staticInputFile)
+        return staticInputs
 
     def LoadOutputs(self):
-        if self.UserSetup.FlownexProject == "":
-            print("No IO data definition path specified")
+        if not self.UserSetup.IOFileDirectory:
+            print("No IO data definition directory specified")
             return None
-        #load scv file named Outputs.csv from self.UserSetup.IOFileDirectory into a list of OutputDefinition
+        #load csv file named Outputs.csv from self.UserSetup.IOFileDirectory into a list of OutputDefinition
         outputFile = os.path.join(self.UserSetup.IOFileDirectory, "Outputs.csv")
         if not os.path.exists(outputFile):
             print("No IO data definition file found: " + outputFile)
@@ -211,7 +211,7 @@ class FlownexIO:
                     #     PropertyIdentifier=row['PropertyIdentifier'],
                     #     Unit=row['Unit'],
                     # )
-                   # Trim whitespace from important fields to avoid accidental "space" values
+                    # Trim whitespace from important fields to avoid accidental "space" values
                     category = (row.get('Category') or "").strip()
                     key = (row.get('Key') or "").strip()
                     desc = (row.get('Description') or "").strip()
@@ -221,12 +221,12 @@ class FlownexIO:
 
                     outputDef = OutputDefinition(
                         Category=category,
-                       Key=key,
-                       Description=desc,
-                       ComponentIdentifier=comp,
-                       PropertyIdentifier=prop,
-                      Unit=unit,
-                   )
+                        Key=key,
+                        Description=desc,
+                        ComponentIdentifier=comp,
+                        PropertyIdentifier=prop,
+                        Unit=unit,
+                    )
                     
                     outputs.append(outputDef)
                 except KeyError as e:

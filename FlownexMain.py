@@ -1,7 +1,5 @@
-from email import header
 import os
 import threading
-from unittest import result
 import asyncio
 import omni.kit.commands
 import omni.ext
@@ -26,6 +24,13 @@ class FlownexMain:
         self._input_controls = {}
         self._fnx_outputs = []
         self.simulation_data_history = []
+        # Persistent result-window state (avoid frame.clear() every poll cycle)
+        self._text_window = None
+        self._key_params_window = None
+        self._text_window_category = None   # category that was last used to build _text_window
+        self._key_params_built = False      # True once _key_params_window has been fully built
+        self._results_value_labels = {}     # outputDef.Key -> value ui.Label in _text_window
+        self._key_params_value_labels = {}  # outputDef.Key -> value ui.Label in _key_params_window
 
 
     def _cleanup(self):
@@ -51,8 +56,8 @@ class FlownexMain:
         
     #UI Construction 
     def _build_Inputs_tab(self, mode: str = "dynamic"):
-        self._load_flownex_outputs() 
-        """Build the physics data reading tab"""   
+        """Build the physics data reading tab"""
+        self._load_flownex_outputs()
         with ui.VStack(spacing=2):             
             with ui.ScrollingFrame() as frame:        
                 if( mode == "dynamic"):
@@ -281,14 +286,17 @@ class FlownexMain:
     def _load_and_apply_flownex_inputs(self):
         configList = self._UserSConfig.LoadDynamicInputs()
         configList2 = self._UserSConfig.LoadStaticInputs()
-        #merge both lists
+        # Guard against None before attempting to merge
+        if configList is None:
+            configList = []
+        # Merge static inputs into dynamic list (avoid duplicates)
         if configList2 is not None:
             for item in configList2:
                 if item not in configList:
                     configList.append(item)
-        if configList is None or len(configList) == 0:
-            self._append_to_results("Input definition file Inputs.csv is missing or empty in "+ 
-                             self._UserSConfig.Setup.IOFileDirectory + 
+        if len(configList) == 0:
+            self._append_to_results("Input definition file Inputs.csv is missing or empty in "+
+                             self._UserSConfig.Setup.IOFileDirectory +
                              " Please configure the IO definition in the Configuration tab.")
             return False
         self._inputFields.clear()
@@ -341,15 +349,21 @@ class FlownexMain:
                 self._heat_label.style = {"color": good_color if _Separator_Pressure_text != "N/A" else bad_color, "font_size": 20}
 
     def _update_ui_after_data_pull(self):
-        """This method is called after new data is fetched from Flownex."""
-        # This function now only needs to schedule the main update task.
-        # The logic has been moved to _update_ui_on_main_thread.
+        """Called on the main thread after every Flownex data fetch.
+
+        Responsibilities:
+          - Schedule lightweight label updates via the async helper.
+          - Refresh the Component Results / Key Parameters windows.
+          - Trigger _update_ui_and_visualization() on the UI extension so that:
+              * USD prim colors are updated with the latest output values.
+              * Open plot windows receive new data points.
+        """
         asyncio.ensure_future(self._update_ui_on_main_thread())
-        
-        # Also trigger the results window update
+
+        # Refresh the results display windows (incremental, no frame.clear()).
         self._UpdateResultsWindow()
 
-        # --- CRITICAL FIX: Call the main extension's update method ---
+        # Update visualization colors and plot data with the new fetch results.
         if hasattr(self, "ui_extension") and self.ui_extension:
             self.ui_extension._update_ui_and_visualization()
 
@@ -432,15 +446,12 @@ class FlownexMain:
                 current_data_point[outputDef.Key] = value # Capture for history
 
         if current_data_point:
-           if current_data_point:
-            # --- START MODIFICATION: Add a time key ---
             time_step = float(self._UserSConfig.Setup.ResultPollingInterval)
-            # If history is empty, time is 0. Otherwise, it's the last time + time_step.
+            # If history is empty, time starts at 0. Otherwise increment from the last recorded time.
             last_time = self.simulation_data_history[-1].get("Time", -time_step) if self.simulation_data_history else -time_step
             current_data_point["Time"] = last_time + time_step
             self.simulation_data_history.append(current_data_point)
-            # --- END MODIFICATION ---
-            
+
             max_history = 300
             if len(self.simulation_data_history) > max_history:
                 self.simulation_data_history = self.simulation_data_history[-max_history:]
@@ -531,101 +542,120 @@ class FlownexMain:
             return
 
         label = self._options[label_index]
-        text_label = f"Results: " + label
+        text_label = f"Results: {label}"
 
         headers = ["Variable", "Value"]
-        rows = []          # full component results (selected category)
-        plot_rows = []     # ONLY key parameters in category "Plot"
 
-        if len(self._outputFields) != 0:
-            for outputDef in self._fnx_outputs:
-                raw_val = self._outputFields.get(outputDef.Key)
-                display_val = "N/A"
-                if raw_val is not None:
-                    try:
-                        display_val = str(round(float(raw_val), 2)) + ' ' + (outputDef.Unit or "")
-                    except (ValueError, TypeError):
-                        display_val = f"err({raw_val})"
-
-                # 1) normal table for the selected category
-                if outputDef.Category == label:
-                    rows.append([str(outputDef.Description), display_val.strip()])
-
-                # 2) key parameters: anything in category "Plot" (case-insensitive)
-                if isinstance(outputDef.Category, str) and outputDef.Category.lower() == "plot":
-                    plot_rows.append([str(outputDef.Description), display_val.strip()])
-
-        # --- helper cell renderer ---
+        # --- Helper: create a styled cell and return the inner Label widget ---
         def _cell(text, header=False):
             bg = cl("#134d67") if header else cl(0.16)
             fg = cl("#ffffff") if header else cl("#eaeaea")
             border = cl(0.35)
-
             with ui.Frame(style={
                 "background_color": bg,
                 "border_color": border,
                 "border_width": 1.0,
                 "padding": 6,
             }):
-                ui.Label(
-                    str(text),
-                    style={
-                        "color": fg,
-                        "font_size": 20
-                    },
-                )
+                lbl = ui.Label(str(text), style={"color": fg, "font_size": 20})
+            return lbl
 
-        # --- WINDOW 1: full component results for selected category ---
-        if not getattr(self, "_text_window", None) or not self._text_window.visible:
+        # --- Helper: compute display value for a single output definition ---
+        def _display(outputDef):
+            raw_val = self._outputFields.get(outputDef.Key)
+            if raw_val is None:
+                return "N/A"
+            try:
+                return (str(round(float(raw_val), 2)) + " " + (outputDef.Unit or "")).strip()
+            except (ValueError, TypeError):
+                return f"err({raw_val})"
+
+        # ------------------------------------------------------------------ #
+        # WINDOW 1 – component results for the currently selected category    #
+        # ------------------------------------------------------------------ #
+        window1_new = not self._text_window or not self._text_window.visible
+        if window1_new:
             self._text_window = ui.Window("Component Results", width=760, height=520)
+            # Force a full build on the new window
+            self._text_window_category = None
+            self._results_value_labels = {}
 
-        with self._text_window.frame:
-            self._text_window.frame.clear()
+        category_changed = (label != self._text_window_category)
 
-            with ui.VStack(height=ui.Percent(100), spacing=8):
+        if category_changed:
+            # Build the window content once for this category
+            self._text_window_category = label
+            self._results_value_labels = {}
 
-            
-                if not getattr(self, "_result_label_name", None):
-                    self._result_label_name =ui.Label(text_label, style={"font_size": 22.0})
-                else:
-                    self._result_label_name.text = text_label
+            with self._text_window.frame:
+                self._text_window.frame.clear()
+                with ui.VStack(height=ui.Percent(100), spacing=8):
+                    self._result_label_name = ui.Label(text_label, style={"font_size": 22.0})
+                    ui.Spacer(height=5)
+                    scroll = ui.ScrollingFrame(
+                        vertical_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_ALWAYS_ON,
+                        horizontal_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_AS_NEEDED,
+                        height=ui.Percent(100),
+                    )
+                    with scroll:
+                        grid = ui.VGrid(column_count=2)
+                        with grid:
+                            for h in headers:
+                                _cell(h, header=True)
+                            for outputDef in self._fnx_outputs:
+                                if outputDef.Category == label:
+                                    _cell(str(outputDef.Description), header=False)
+                                    val_lbl = _cell(_display(outputDef), header=False)
+                                    self._results_value_labels[outputDef.Key] = val_lbl
+        else:
+            # Same category – only update the text in existing value labels
+            if getattr(self, "_result_label_name", None):
+                self._result_label_name.text = text_label
+            for outputDef in self._fnx_outputs:
+                if outputDef.Category == label:
+                    val_lbl = self._results_value_labels.get(outputDef.Key)
+                    if val_lbl:
+                        val_lbl.text = _display(outputDef)
 
-                ui.Spacer(height=5)
-                scroll = ui.ScrollingFrame(
-                    vertical_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_ALWAYS_ON,
-                    horizontal_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_AS_NEEDED,
-                    height=ui.Percent(100),
-                )
-                with scroll:
-                    grid = ui.VGrid(column_count=2)
-                    with grid:
-                        for h in headers:
-                            _cell(h, header=True)
-                        for r in rows:
-                            for t in r:
-                                _cell(t, header=False)
-
-        # --- WINDOW 2: key parameters (category == "Plot") ---
-        if not getattr(self, "_key_params_window", None) or not self._key_params_window.visible:
+        # ------------------------------------------------------------------ #
+        # WINDOW 2 – key parameters (outputs whose category == "Plot")        #
+        # ------------------------------------------------------------------ #
+        window2_new = not self._key_params_window or not self._key_params_window.visible
+        if window2_new:
             self._key_params_window = ui.Window("Key Parameters", width=420, height=360)
+            self._key_params_built = False
+            self._key_params_value_labels = {}
 
-        with self._key_params_window.frame:
-            self._key_params_window.frame.clear()
-            with ui.VStack(height=ui.Percent(100), spacing=8):
-                ui.Label("Key Parameters", style={"font_size": 22.0})
-                scroll2 = ui.ScrollingFrame(
-                    vertical_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_ALWAYS_ON,
-                    horizontal_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_AS_NEEDED,
-                    height=ui.Percent(100),
-                )
-                with scroll2:
-                    grid2 = ui.VGrid(column_count=2)
-                    with grid2:
-                        for h in headers:
-                            _cell(h, header=True)
-                        for r in plot_rows:
-                            for t in r:
-                                _cell(t, header=False)
+        if not self._key_params_built:
+            # Build the key-parameters window once
+            self._key_params_value_labels = {}
+            with self._key_params_window.frame:
+                self._key_params_window.frame.clear()
+                with ui.VStack(height=ui.Percent(100), spacing=8):
+                    ui.Label("Key Parameters", style={"font_size": 22.0})
+                    scroll2 = ui.ScrollingFrame(
+                        vertical_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_ALWAYS_ON,
+                        horizontal_scrollbar_policy=ui.ScrollBarPolicy.SCROLLBAR_AS_NEEDED,
+                        height=ui.Percent(100),
+                    )
+                    with scroll2:
+                        grid2 = ui.VGrid(column_count=2)
+                        with grid2:
+                            for h in headers:
+                                _cell(h, header=True)
+                            for outputDef in self._fnx_outputs:
+                                if isinstance(outputDef.Category, str) and outputDef.Category.lower() == "plot":
+                                    _cell(str(outputDef.Description), header=False)
+                                    val_lbl = _cell(_display(outputDef), header=False)
+                                    self._key_params_value_labels[outputDef.Key] = val_lbl
+            self._key_params_built = True
+        else:
+            # Only update the value labels in the existing grid
+            for outputDef in self._fnx_outputs:
+                if isinstance(outputDef.Category, str) and outputDef.Category.lower() == "plot":
+                    val_lbl = self._key_params_value_labels.get(outputDef.Key)
+                    if val_lbl:
+                        val_lbl.text = _display(outputDef)
 
 
 
@@ -644,7 +674,7 @@ class FlownexMain:
 
     def _open_project(self):
         if self._FlownexAPI is not None:
-            self._FlownexAPI.LaunchFlownexIfNeeded(self._UserSConfig.UserSetup.FlownexProject)
+            self._FlownexAPI.LaunchFlownexIfNeeded(self._UserSConfig.Setup.FlownexProject)
 
     def _append_to_results(self, message):
         """Append a message to the results field, with a newline."""
