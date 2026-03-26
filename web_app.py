@@ -579,26 +579,46 @@ def mapping_generate():
 # ---------------------------------------------------------------------------
 
 _server_thread: Optional[threading.Thread] = None
+_flask_server = None   # werkzeug WSGIServer; stored so stop_server() can shut it down
 
 
 def start_server(host: str = "0.0.0.0", port: int = 5000):
-    """Launch Flask in a daemon thread.  Safe to call multiple times."""
-    global _server_thread
+    """
+    Launch the Flask WSGI server using werkzeug's ``make_server`` so that
+    ``stop_server()`` can call ``server.shutdown()`` and actually stop
+    accepting connections when the extension is disabled.
+    """
+    global _server_thread, _flask_server
     if _server_thread and _server_thread.is_alive():
         print("[web_app] Server already running.")
         return
 
+    try:
+        from werkzeug.serving import make_server as _make_wsgi_server
+        srv = _make_wsgi_server(host, port, app)
+    except Exception as exc:
+        print(f"[web_app] Failed to bind server on {host}:{port} – {exc}")
+        return
+
+    _flask_server = srv
+
     def _run():
         print(f"[web_app] Starting web server → http://{host}:{port}")
-        app.run(host=host, port=port, debug=False, use_reloader=False)
+        srv.serve_forever()
 
     _server_thread = threading.Thread(target=_run, name="flownex-web", daemon=True)
     _server_thread.start()
 
 
 def stop_server():
-    """Stop the transient loop.  Flask daemon thread exits with the process."""
-    global _server_thread
+    """
+    Stop the transient polling loop and shut down the HTTP server so that
+    the web UI becomes unreachable immediately after the extension is disabled.
+    """
+    global _server_thread, _flask_server
     _state.stop_transient()
     _state.on_outputs_ready = None
+    if _flask_server is not None:
+        _flask_server.shutdown()
+        _flask_server = None
     _server_thread = None

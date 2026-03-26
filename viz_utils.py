@@ -70,32 +70,46 @@ _FALLBACK_MATERIAL_PATH = "/World/Looks/Aluminum_Foil"
 _viz_session_overrides: Set[str] = set()
 
 
-def _get_xform_target(prim: Usd.Prim) -> Usd.Prim:
-    """
-    Returns the nearest Xform (or Scope) ancestor when the given prim is a
-    ``Mesh``, otherwise returns the prim itself.
+_GEO_TYPE_NAMES: frozenset = frozenset({
+    "Mesh", "BasisCurves", "Points", "NurbsPatch",
+    "Capsule", "Cone", "Cube", "Cylinder", "Sphere",
+})
 
-    Binding the material on an Xform with ``strongerThanDescendants`` is
-    preferred because a single override on the Xform covers all child geometry
-    prims without touching them individually.
+
+def _collect_geometry_prims(prim: Usd.Prim) -> List[Usd.Prim]:
     """
-    if prim.GetTypeName() == "Mesh":
-        parent = prim.GetParent()
-        if parent.IsValid() and parent.GetPath() != Sdf.Path.absoluteRootPath:
-            return parent
-    return prim
+    Traverse *prim* and all its descendants and return every active, defined
+    geometry prim (Mesh, BasisCurves, etc.) found.
+
+    If *prim* is itself a geometry prim, returns ``[prim]`` without further
+    traversal.  This is used to find the actual renderable prims so that
+    material bindings can be written directly on them, without needing any
+    ``strongerThanDescendants`` / ``weakerThanDescendants`` override.
+    """
+    result: List[Usd.Prim] = []
+    for p in Usd.PrimRange(prim):
+        if not p.IsActive() or not p.IsDefined():
+            continue
+        if p.GetTypeName() in _GEO_TYPE_NAMES:
+            result.append(p)
+    return result
 
 
 def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, float, float]) -> int:
     """
-    Applies a visualization colour to the given prim via the session layer.
+    Applies a visualization colour to *prim* and all its geometry descendants
+    via the session layer.
 
     Implementation
     --------------
     * All edits go to the **session layer** so they are never persisted to disk.
-    * For geometry prims the ``primvars:displayColor`` primvar is set directly on
-      the prim.  This avoids touching any material bindings or binding-strength
-      flags, so the existing scene material setup is left completely intact.
+    * For every geometry prim (Mesh, etc.) in the subtree a ``UsdPreviewSurface``
+      material is bound **directly on the geometry prim** without any binding-
+      strength token (``strongerThanDescendants`` / ``weakerThanDescendants``).
+      Because the session layer is the strongest layer in the stack the binding
+      wins over any root-layer opinion automatically, so no strength override is
+      needed and existing binding-strength settings elsewhere in the scene are
+      completely undisturbed.
     * For light prims the ``inputs:color`` attribute is set instead.
 
     Returns the number of prims that received a colour opinion (0 on failure).
@@ -125,21 +139,40 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
             except Exception as e:
                 print(f"[viz] Light colour override failed on {prim.GetPath()}: {e}")
         else:
-            # Geometry / assemblies: set the displayColor primvar directly.
-            # No material binding or binding-strength changes are made, so the
-            # existing scene material setup is fully preserved.
-            try:
-                primvars_api = UsdGeom.PrimvarsAPI(prim)
-                dcp = primvars_api.CreatePrimvar(
-                    "displayColor",
-                    Sdf.ValueTypeNames.Color3fArray,
-                    UsdGeom.Tokens.constant,
+            # Geometry / assemblies: bind a UsdPreviewSurface material directly
+            # on each geometry prim in the subtree.  No binding-strength token is
+            # written – the session layer's higher priority means it always wins
+            # without needing to touch any strength attribute.
+            mat_key = f"r{int(r * 255):03d}g{int(g * 255):03d}b{int(b * 255):03d}"
+            mat_path = Sdf.Path(f"{_VIZ_SCOPE_PATH}/{mat_key}")
+
+            UsdGeom.Scope.Define(stage, _VIZ_SCOPE_PATH)
+
+            if not stage.GetPrimAtPath(mat_path).IsValid():
+                mat = UsdShade.Material.Define(stage, mat_path)
+                shader = UsdShade.Shader.Define(stage, mat_path.AppendChild("Shader"))
+                shader.CreateIdAttr("UsdPreviewSurface")
+                shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
+                    Gf.Vec3f(r, g, b)
                 )
-                dcp.Set([(r, g, b)])
-                _viz_session_overrides.add(prim.GetPath().pathString)
-                colored_count += 1
-            except Exception as e:
-                print(f"[viz] displayColor override failed on {prim.GetPath()}: {e}")
+                shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
+                shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+                mat.CreateSurfaceOutput().ConnectToSource(
+                    shader.ConnectableAPI(), "surface"
+                )
+
+            mat = UsdShade.Material(stage.GetPrimAtPath(mat_path))
+
+            geo_prims = _collect_geometry_prims(prim) or [prim]
+            for geo_prim in geo_prims:
+                try:
+                    # No binding-strength argument → fallbackStrength is used,
+                    # which means the strength attribute is NOT written at all.
+                    UsdShade.MaterialBindingAPI.Apply(geo_prim).Bind(mat)
+                    _viz_session_overrides.add(geo_prim.GetPath().pathString)
+                    colored_count += 1
+                except Exception as e:
+                    print(f"[viz] Material bind failed on {geo_prim.GetPath()}: {e}")
     finally:
         stage.SetEditTarget(old_target)
 
@@ -149,27 +182,25 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
 def _apply_fallback_material_to_prim(stage: Usd.Stage, prim: Usd.Prim) -> int:
     """
     Binds the fallback material at ``_FALLBACK_MATERIAL_PATH``
-    (``/World/Looks/Aluminum_Foil``) to *prim* via the session layer.
+    (``/World/Looks/Aluminum_Foil``) directly on every geometry prim in the
+    subtree rooted at *prim*, via the session layer.
 
-    The binding uses default strength (no ``strongerThanDescendants`` override)
-    so that the existing binding-strength setup on child prims is left intact.
+    The binding is written without any binding-strength token so that the
+    existing ``strongerThanDescendants`` / ``weakerThanDescendants`` settings
+    elsewhere in the scene are completely undisturbed.
 
     If the Aluminum_Foil material is not present in the stage, the function
     falls back to applying a silver colour via ``_apply_color_to_prim``.
 
-    Returns 1 on success, 0 on failure.
+    Returns the number of geometry prims bound (0 on failure).
     """
     global _viz_session_overrides
 
     if not prim or not prim.IsValid():
         return 0
 
-    # Prefer binding the Xform ancestor over a bare Mesh prim.
-    prim = _get_xform_target(prim)
-
     fallback_mat_prim = stage.GetPrimAtPath(_FALLBACK_MATERIAL_PATH)
     if not fallback_mat_prim or not fallback_mat_prim.IsValid():
-        # Fallback material not found in the stage – use silver instead.
         print(f"[viz] Fallback material '{_FALLBACK_MATERIAL_PATH}' not found; using silver.")
         return _apply_color_to_prim(stage, prim, (0.75, 0.75, 0.75))
 
@@ -183,13 +214,14 @@ def _apply_fallback_material_to_prim(stage: Usd.Stage, prim: Usd.Prim) -> int:
 
     try:
         mat = UsdShade.Material(fallback_mat_prim)
-        # Bind without a binding-strength override so we don't disturb the
-        # existing strongerThanDescendants / weakerThanDescendants setup.
-        UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
-        _viz_session_overrides.add(prim.GetPath().pathString)
-        colored_count = 1
-    except Exception as e:
-        print(f"[viz] Fallback material bind failed on {prim.GetPath()}: {e}")
+        geo_prims = _collect_geometry_prims(prim) or [prim]
+        for geo_prim in geo_prims:
+            try:
+                UsdShade.MaterialBindingAPI.Apply(geo_prim).Bind(mat)
+                _viz_session_overrides.add(geo_prim.GetPath().pathString)
+                colored_count += 1
+            except Exception as e:
+                print(f"[viz] Fallback material bind failed on {geo_prim.GetPath()}: {e}")
     finally:
         stage.SetEditTarget(old_target)
 
@@ -217,18 +249,14 @@ def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
     stage.SetEditTarget(Usd.EditTarget(session_layer))
 
     try:
-        # Remove the material-binding relationship we authored for each prim
-        # (used by the Aluminum_Foil fallback path) and clear the displayColor
-        # primvar we authored for data-driven coloring.
+        # Remove the material-binding relationship we authored for each geometry
+        # prim and clear any light-colour overrides.
         for path_str in _viz_session_overrides:
             prim = stage.GetPrimAtPath(path_str)
             if not prim or not prim.IsValid():
                 continue
-            # Clear displayColor primvar (set by _apply_color_to_prim).
-            dcp = UsdGeom.PrimvarsAPI(prim).GetPrimvar("displayColor")
-            if dcp and dcp.IsDefined():
-                dcp.GetAttr().Clear()
-            # Clear material binding (set by _apply_fallback_material_to_prim).
+            # Clear material binding written by _apply_color_to_prim /
+            # _apply_fallback_material_to_prim.
             rel = UsdShade.MaterialBindingAPI(prim).GetDirectBindingRel()
             if rel and rel.IsValid():
                 # ClearTargets(True) removes the relationship spec from the
