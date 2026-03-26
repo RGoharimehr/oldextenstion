@@ -11,25 +11,373 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
     crossorigin="anonymous"></script>
   <style>
-    body { background:#1a1d23; color:#e0e0e0; }
-    .nav-tabs .nav-link           { color:#aaa; }
-    .nav-tabs .nav-link.active    { background:#0d6efd; color:#fff; border-color:#0d6efd; }
-    .card                         { background:#23262e; border:1px solid #333; }
-    .card-header                  { background:#1e2128; border-bottom:1px solid #333; font-weight:600; }
-    .form-control,.form-select    { background:#2a2d35; color:#e0e0e0; border-color:#444; }
-    .form-control:focus,
-    .form-select:focus             { background:#2a2d35; color:#e0e0e0; border-color:#0d6efd; box-shadow:none; }
-    .form-control[readonly]       { background:#1e2128; }
-    #log-area                     { font-family:monospace; font-size:.78rem; max-height:200px;
-                                    overflow-y:auto; background:#12141a; border:1px solid #333;
-                                    padding:8px; border-radius:4px; }
-    .output-table td,
-    .output-table th              { font-size:.88rem; }
-    .slider-label                 { min-width:60px; text-align:right; font-size:.85rem; color:#aaa; }
-    label.form-label              { font-size:.88rem; color:#ccc; }
-    h6                            { color:#90caf9; }
-    .text-ok                      { color:#4caf50; }
-    .text-err                     { color:#f44336; }
+    /* ================================================================
+       FLOWNEX DASHBOARD – Dark Glassmorphic Engineering Theme
+       Color system:
+         Main bg    #1a1a1a   Panel bg  #2d2d2d   Card bg   #363636
+         Green      #86ef47   Blue      #0050e0
+         Text       #ffffff   Muted     #b0b0b0   Border    #595959
+         OK green   #33ff33   Error red #ff3333   Warning   #ffcc00
+    ================================================================ */
+
+    :root {
+      --bg-main:     #1a1a1a;
+      --bg-panel:    #2d2d2d;
+      --bg-card:     #363636;
+      --green:       #86ef47;
+      --green-ok:    #33ff33;
+      --blue:        #0050e0;
+      --text-white:  #ffffff;
+      --text-gray:   #b0b0b0;
+      --border:      #595959;
+      --red:         #ff3333;
+      --yellow:      #ffcc00;
+      --radius-btn:  10px;
+      --radius-card: 12px;
+      --radius-panel:14px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-main);
+      color: var(--text-white);
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      margin: 0;
+    }
+
+    /* ---- Scrollbar ---- */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #595959; border-radius: 3px; }
+
+    /* ---- Navbar ---- */
+    .fnx-navbar {
+      background: rgba(18, 18, 18, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(89,89,89,0.35);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 200;
+    }
+    .fnx-brand {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-white);
+      letter-spacing: 0.5px;
+    }
+    .fnx-brand .accent { color: var(--green); }
+
+    /* ---- Tab nav pill bar ---- */
+    .fnx-tab-bar {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      background: rgba(45,45,45,0.65);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: var(--radius-panel);
+      padding: 5px 6px;
+      margin-bottom: 16px;
+      border: 1px solid rgba(89,89,89,0.3);
+    }
+    .fnx-tab-bar .nav-link {
+      color: var(--text-gray);
+      background: transparent;
+      border: none !important;
+      border-radius: var(--radius-btn);
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+      cursor: pointer;
+      white-space: nowrap;
+      outline: none;
+    }
+    .fnx-tab-bar .nav-link:hover {
+      background: rgba(89,89,89,0.35);
+      color: var(--text-white);
+    }
+    .fnx-tab-bar .nav-link.active {
+      background: var(--blue) !important;
+      color: #ffffff !important;
+      box-shadow: 0 0 14px rgba(0,80,224,0.45);
+    }
+    /* Hide Bootstrap's default tab borders */
+    .nav-tabs { border-bottom: none !important; }
+
+    /* ---- Cards / Panels ---- */
+    .card {
+      background: rgba(45,45,45,0.72) !important;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(89,89,89,0.3) !important;
+      border-radius: var(--radius-card) !important;
+      box-shadow: 0 4px 28px rgba(0,0,0,0.45);
+      overflow: hidden;
+    }
+    .card-header {
+      background: rgba(20, 20, 20, 0.82) !important;
+      border-bottom: 1px solid rgba(89,89,89,0.3) !important;
+      padding: 10px 16px !important;
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      color: var(--green) !important;
+    }
+    .card-body { padding: 14px 16px; }
+    .card-body.p-0 { padding: 0 !important; }
+    .card-body.p-2 { padding: 8px !important; }
+
+    /* ---- Buttons ---- */
+    .btn {
+      border-radius: var(--radius-btn) !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      padding: 6px 14px !important;
+      transition: all 0.2s ease !important;
+      border: 1px solid transparent !important;
+    }
+    .btn:active:not(:disabled) { transform: translateY(1px); }
+    .btn:disabled { opacity: 0.38 !important; cursor: not-allowed !important; }
+
+    .btn-success {
+      background: var(--green) !important;
+      color: #1a1a1a !important;
+      border-color: var(--green) !important;
+    }
+    .btn-success:hover:not(:disabled) {
+      background: #a0ff62 !important;
+      box-shadow: 0 0 14px rgba(134,239,71,0.5) !important;
+    }
+    .btn-danger {
+      background: rgba(255,51,51,0.12) !important;
+      color: var(--red) !important;
+      border-color: rgba(255,51,51,0.45) !important;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(255,51,51,0.25) !important;
+      box-shadow: 0 0 10px rgba(255,51,51,0.35) !important;
+    }
+    .btn-primary {
+      background: var(--blue) !important;
+      color: #ffffff !important;
+      border-color: var(--blue) !important;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #1a6aff !important;
+      box-shadow: 0 0 14px rgba(0,80,224,0.5) !important;
+    }
+    .btn-secondary {
+      background: rgba(89,89,89,0.25) !important;
+      color: var(--text-gray) !important;
+      border-color: var(--border) !important;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(89,89,89,0.45) !important;
+      color: var(--text-white) !important;
+    }
+    .btn-outline-secondary {
+      background: transparent !important;
+      color: var(--text-gray) !important;
+      border-color: var(--border) !important;
+    }
+    .btn-outline-secondary:hover:not(:disabled) {
+      background: rgba(89,89,89,0.3) !important;
+      color: var(--text-white) !important;
+    }
+    .btn-outline-light {
+      background: transparent !important;
+      color: var(--text-gray) !important;
+      border-color: rgba(255,255,255,0.18) !important;
+    }
+    .btn-outline-light:hover:not(:disabled) {
+      background: rgba(255,255,255,0.08) !important;
+      color: var(--text-white) !important;
+    }
+
+    /* ---- Form controls ---- */
+    label.form-label {
+      font-size: 11px !important;
+      color: var(--text-gray) !important;
+      margin-bottom: 4px !important;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .form-control, .form-select {
+      background: rgba(18,18,18,0.72) !important;
+      color: var(--text-white) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-btn) !important;
+      font-size: 13px !important;
+      transition: border-color 0.2s, box-shadow 0.2s !important;
+    }
+    .form-control:focus, .form-select:focus {
+      background: rgba(18,18,18,0.88) !important;
+      color: var(--text-white) !important;
+      border-color: var(--green) !important;
+      box-shadow: 0 0 0 2px rgba(134,239,71,0.2) !important;
+      outline: none !important;
+    }
+    .form-control[readonly] {
+      background: rgba(18,18,18,0.4) !important;
+      color: var(--text-gray) !important;
+    }
+    .form-select option { background: #2d2d2d; color: var(--text-white); }
+
+    /* ---- Checkboxes ---- */
+    .form-check-input {
+      background-color: rgba(18,18,18,0.7) !important;
+      border-color: var(--border) !important;
+      border-radius: 3px !important;
+    }
+    .form-check-input:checked {
+      background-color: var(--green) !important;
+      border-color: var(--green) !important;
+    }
+    .form-check-input:focus {
+      box-shadow: 0 0 0 2px rgba(134,239,71,0.25) !important;
+    }
+    .form-check-label {
+      color: var(--text-gray) !important;
+      font-size: 12px !important;
+    }
+
+    /* ---- Range slider ---- */
+    .form-range {
+      -webkit-appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(89,89,89,0.45);
+      cursor: pointer;
+      padding: 0;
+    }
+    .form-range::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(89,89,89,0.45);
+    }
+    .form-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-top: -5px;
+      box-shadow: 0 0 7px rgba(134,239,71,0.65);
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+    .form-range::-webkit-slider-thumb:hover {
+      box-shadow: 0 0 12px rgba(134,239,71,0.9);
+    }
+    .form-range::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--green);
+      border: none;
+      cursor: pointer;
+    }
+    .form-range::-moz-range-track {
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(89,89,89,0.45);
+    }
+    .slider-label {
+      min-width: 56px;
+      text-align: right;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--green);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---- Tables ---- */
+    .table {
+      color: var(--text-white) !important;
+      font-size: 12px !important;
+      margin-bottom: 0 !important;
+    }
+    .table thead th {
+      background: rgba(18,18,18,0.82) !important;
+      color: var(--text-gray) !important;
+      font-size: 11px !important;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 1px solid rgba(89,89,89,0.35) !important;
+      padding: 8px 12px !important;
+    }
+    .table tbody td {
+      border-bottom: 1px solid rgba(89,89,89,0.18) !important;
+      padding: 7px 12px !important;
+      background: transparent !important;
+    }
+    .table-hover tbody tr:hover td {
+      background: rgba(134,239,71,0.05) !important;
+    }
+    .table-dark { --bs-table-bg: transparent !important; }
+
+    /* ---- Log areas ---- */
+    #log-area, #mapping-log {
+      font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+      font-size: 11px;
+      line-height: 1.55;
+      max-height: 180px;
+      overflow-y: auto;
+      background: rgba(8,8,8,0.7);
+      border: 1px solid rgba(89,89,89,0.3);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--text-gray);
+    }
+    #mapping-log { max-height: 200px; min-height: 60px; }
+
+    /* ---- Status badge ---- */
+    #status-badge {
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      border-radius: 20px !important;
+      padding: 4px 12px !important;
+      letter-spacing: 0.3px;
+    }
+    .badge.bg-success   { background: var(--green) !important; color: #1a1a1a !important; }
+    .badge.bg-primary   { background: var(--blue)  !important; color: #ffffff !important; }
+    .badge.bg-secondary { background: rgba(89,89,89,0.35) !important; color: var(--text-gray) !important; border: 1px solid rgba(89,89,89,0.5) !important; }
+    .badge.bg-warning   { background: rgba(255,204,0,0.15) !important; color: var(--yellow) !important; border: 1px solid rgba(255,204,0,0.4) !important; }
+    .badge.bg-danger    { background: rgba(255,51,51,0.18)  !important; color: var(--red) !important; border: 1px solid rgba(255,51,51,0.4) !important; }
+
+    /* ---- Text utilities ---- */
+    .text-ok      { color: var(--green-ok) !important; }
+    .text-err     { color: var(--red)      !important; }
+    .text-success { color: var(--green)    !important; }
+    .text-danger  { color: var(--red)      !important; }
+    .text-warning { color: var(--yellow)   !important; }
+    .text-muted   { color: var(--text-gray)!important; }
+
+    /* ---- Section headings ---- */
+    h6 { color: var(--green) !important; font-weight: 700 !important; }
+
+    /* ---- Inline code ---- */
+    code {
+      background: rgba(134,239,71,0.1);
+      color: var(--green);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 11px;
+    }
+    strong { color: var(--text-white); }
+
+    /* ---- Plot ---- */
+    #plot-no-data { color: var(--text-gray) !important; }
+    .output-table td, .output-table th { font-size: 12px; }
+
+    /* ---- Chart card inner area ---- */
+    #plot-canvas { display: block; }
   </style>
 </head>
 <body>
