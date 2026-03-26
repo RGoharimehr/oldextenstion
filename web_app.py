@@ -21,8 +21,10 @@ schedule work there via ``_run_on_omni(fn)``.
 from __future__ import annotations
 
 import asyncio
+import atexit            # used at module-level to register stop_server() as a safety-net shutdown hook
 import concurrent.futures
 import json
+import socket as _socket
 import threading
 import time
 from pathlib import Path
@@ -633,7 +635,11 @@ def start_server(host: str = "0.0.0.0", port: int = 5000):
 
     try:
         from werkzeug.serving import make_server as _make_wsgi_server
-        srv = _make_wsgi_server(host, port, app)
+        # threaded=True: each HTTP request is handled in its own short-lived
+        # thread so the accept loop is never blocked by a slow request.  This
+        # means stop_server() can always interrupt serve_forever() quickly
+        # instead of waiting for the current request to finish.
+        srv = _make_wsgi_server(host, port, app, threaded=True)
     except Exception as exc:
         print(f"[web_app] Failed to bind server on {host}:{port} – {exc}")
         return
@@ -644,6 +650,11 @@ def start_server(host: str = "0.0.0.0", port: int = 5000):
         print(f"[web_app] Starting web server → http://{host}:{port}")
         try:
             srv.serve_forever()
+        except Exception as exc:
+            # serve_forever() raises when the socket is force-closed by
+            # stop_server(); treat that as a clean exit, not an error.
+            if _flask_server is not None:
+                print(f"[web_app] Server error: {exc}")
         finally:
             print("[web_app] Web server thread exited.")
 
@@ -690,19 +701,35 @@ def stop_server():
     _server_thread = None
 
     if srv is not None:
+        # Step 1 – force-close the listening socket immediately.
+        # This unblocks serve_forever()'s internal select() right away,
+        # regardless of whether a request is currently being processed.
+        # Without this, on a single-threaded server, shutdown() would wait
+        # up to 0.5 s per poll cycle (or forever during a long request).
+        try:
+            srv.socket.shutdown(_socket.SHUT_RDWR)
+        except OSError as exc:
+            # ENOTCONN / EBADF are expected if the socket is already closed.
+            print(f"[web_app] socket.shutdown: {exc!r} (ignored)")
+        try:
+            srv.socket.close()
+        except OSError as exc:
+            print(f"[web_app] socket.close: {exc!r} (ignored)")
+        # Step 2 – signal serve_forever() to stop (belt-and-suspenders).
         try:
             srv.shutdown()
-            try:
-                srv.server_close()
-            except Exception:
-                pass
-        except Exception as exc:
-            print(f"[web_app] server shutdown error: {exc}")
+        except Exception:
+            pass
+        # Step 3 – release OS-level resources.
+        try:
+            srv.server_close()
+        except Exception:
+            pass
 
-    # Wait briefly for the background server thread to fully exit so that
-    # the port is released before the extension is re-enabled.
+    # Wait for the server thread to fully exit so the port is released
+    # before the extension is re-enabled.
     if th is not None and th.is_alive():
-        th.join(timeout=2.0)
+        th.join(timeout=3.0)
         if th.is_alive():
             print("[web_app] Warning: server thread did not exit cleanly.")
 
@@ -715,3 +742,8 @@ def stop_server():
     _state._transient_running = False
     _state._timer = None
 
+
+# Safety-net: if the Omniverse process exits without calling on_shutdown()
+# (e.g. force-close, crash, or Kit's shutdown skips extension hooks), make
+# sure the server socket is released so the port doesn't stay occupied.
+atexit.register(stop_server)
