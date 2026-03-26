@@ -478,13 +478,13 @@
 
     <!-- Tab nav (scrollable pill bar) -->
     <div class="fnx-tabs-row" id="mainTabs">
-      <a class="fnx-tab-btn active" data-bs-toggle="tab" href="#tab-operating">Operating Conditions</a>
-      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-geometry">Geometrical Des.</a>
-      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-results">Results</a>
-      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-plot">Plotting</a>
-      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-viz">Visualization</a>
-      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-mapping">Mapping</a>
-      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-config">Config</a>
+      <a class="fnx-tab-btn active" href="#" onclick="switchTab(this,'tab-operating');return false;">Operating Conditions</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-geometry');return false;">Geometrical Des.</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-results');return false;">Results</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-plot');return false;">Plotting</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-viz');return false;">Visualization</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-mapping');return false;">Mapping</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-config');return false;">Config</a>
     </div>
 
     <!-- Tab content -->
@@ -724,6 +724,23 @@ const STATUS_POLL_INTERVAL_MS = 2000;
 const FMT_SMALL_THRESHOLD = 10;
 const FMT_SMALL_DECIMALS  = 4;
 const FMT_LARGE_DECIMALS  = 2;
+
+// ============================================================
+// Tab switching (custom – Bootstrap plugin not used here)
+// ============================================================
+function switchTab(clickedBtn, paneId) {
+  // Deactivate all tab buttons
+  document.querySelectorAll('#mainTabs .fnx-tab-btn').forEach(b => b.classList.remove('active'));
+  // Activate clicked button
+  clickedBtn.classList.add('active');
+  // Hide all panes
+  document.querySelectorAll('.tab-content .tab-pane').forEach(p => {
+    p.classList.remove('show', 'active');
+  });
+  // Show target pane
+  const pane = document.getElementById(paneId);
+  if (pane) { pane.classList.add('show', 'active'); }
+}
 
 // ============================================================
 // State
