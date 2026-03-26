@@ -172,7 +172,7 @@
     #ui-scale-select {
       font-size: 10px; padding: 2px 4px; background: rgba(40,40,40,0.8);
       color: var(--gray); border: 1px solid rgba(89,89,89,0.5); border-radius: 5px;
-      cursor: pointer; max-width: 68px;
+      cursor: pointer; max-width: 52px;
     }
     #ui-scale-select:hover { border-color: var(--green); }
 
@@ -478,12 +478,12 @@
       <span class="fnx-panel-title">Dashboard Control</span>
       <div class="head-btns">
         <select id="ui-scale-select" title="UI Scale" onchange="applyScale(this.value)">
-          <option value="0.75">XS 75%</option>
-          <option value="0.85">SM 85%</option>
-          <option value="1.00" selected>MD 100%</option>
-          <option value="1.15">LG 115%</option>
-          <option value="1.30">XL 130%</option>
-          <option value="1.50">2X 150%</option>
+          <option value="0.75">75%</option>
+          <option value="0.85">85%</option>
+          <option value="1.00" selected>100%</option>
+          <option value="1.15">115%</option>
+          <option value="1.30">130%</option>
+          <option value="1.50">150%</option>
         </select>
         <button id="btn-toggle-panel" class="btn btn-outline-secondary btn-sm"
           onclick="toggleDashboard()" title="Hide Dashboard" style="padding:3px 7px!important;font-size:13px!important;">◀</button>
