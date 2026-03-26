@@ -45,25 +45,10 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
 
-    /* ── TOP NAVBAR ── */
-    .fnx-nav {
-      position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
-      background: rgba(12,12,12,0.96);
-      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(89,89,89,0.3);
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0 16px; z-index: 400;
-    }
-    .fnx-brand {
-      font-size: 14px; font-weight: 700; color: var(--white); letter-spacing: 0.3px;
-    }
-    .fnx-brand .accent { color: var(--green); }
-    .fnx-brand .sub { font-size: 10px; color: var(--gray); font-weight: 400; margin-left: 6px; }
-
     /* ── MAIN LAYOUT ── */
     .fnx-layout {
       position: fixed;
-      top: var(--nav-h); bottom: var(--bar-h); left: 0; right: 0;
+      top: 0; bottom: var(--bar-h); left: 0; right: 0;
       display: flex; overflow: hidden;
     }
 
@@ -431,14 +416,6 @@
 </head>
 <body>
 
-<!-- ═══ TOP NAVBAR ═══ -->
-<nav class="fnx-nav">
-  <span class="fnx-brand">
-    ⚙ <span class="accent">Flownex</span>
-    <span class="sub">Dashboard</span>
-  </span>
-  <span id="status-badge" class="badge bg-secondary">Connecting…</span>
-</nav>
 
 <!-- Floating button to re-open dashboard when collapsed -->
 <button id="btn-panel-reopen" onclick="toggleDashboard()" title="Open Dashboard">▶</button>
@@ -1053,15 +1030,17 @@ async function refreshStatus() {
   const s = await api("GET", "/api/simulation/status");
   if (!s) return;
 
-  // Navbar badge
+  // Navbar badge (element removed but guard for safety)
   const badge = document.getElementById("status-badge");
-  if (s.transientRunning) {
-    badge.textContent = "⏩ Transient Running";  badge.className = "badge bg-success";
-  } else if (s.connected) {
-    badge.textContent = "✅ Connected";          badge.className = "badge bg-primary";
-  } else {
-    badge.textContent = s.flownexAvailable ? "⚡ Ready" : "⚠ Flownex Unavailable";
-    badge.className   = s.flownexAvailable ? "badge bg-warning text-dark" : "badge bg-danger";
+  if (badge) {
+    if (s.transientRunning) {
+      badge.textContent = "⏩ Transient Running";  badge.className = "badge bg-success";
+    } else if (s.connected) {
+      badge.textContent = "✅ Connected";          badge.className = "badge bg-primary";
+    } else {
+      badge.textContent = s.flownexAvailable ? "⚡ Ready" : "⚠ Flownex Unavailable";
+      badge.className   = s.flownexAvailable ? "badge bg-warning text-dark" : "badge bg-danger";
+    }
   }
 
   // Config tab indicators
