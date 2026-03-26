@@ -76,7 +76,7 @@ class FlownexIO:
             #handle older files that do not have ResultPollingInterval
             try:
                 self.UserSetup.ResultPollingInterval = x.ResultPollingInterval
-            except:
+            except AttributeError:
                 pass
 
     def Save(self):

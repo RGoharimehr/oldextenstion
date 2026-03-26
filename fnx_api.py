@@ -38,16 +38,16 @@ class FNXApi:
             #print("Flownex location: " + value)
             value = value.rpartition('FlownexSE.exe')[0]
             if value is None:
-                print("Could not resolve Flowenx registrartion. Run the 'registercomapi.bat' (found in the correct version's Program Files)")
+                print("Could not resolve Flownex registration. Run the 'registercomapi.bat' (found in the correct version's Program Files)")
             return value
         else:
-            print("Cond not resolve flownex key in registry")
+            print("Could not resolve Flownex key in registry")
             print("Run the 'registercomapi.bat' (found in the Flownex installation folder in Program Files)")
         return None    
     
     def __init__(self):
         self.ProjectFile: str
-        self.FlownexInstalltionDetected = False
+        self.FlownexInstallationDetected = False
         self.AttachedProject = None
         self.FlownexSE = None
         self.SimulationController = None
@@ -59,13 +59,13 @@ class FNXApi:
                 clr.AddReference(FlownexPath + 'IPS.Core.dll')
                 import IPS
                 from IPS import Core
-                self.FlownexInstalltionDetected = True
+                self.FlownexInstallationDetected = True
             except  Exception as e:
                 print(f"Error loading Flownex API module IPS.Core.dll: {e}")
 
     def AttachToProject(self, projectPath: str):
-        if not self.FlownexInstalltionDetected:
-            print("Flownex not avialable")
+        if not self.FlownexInstallationDetected:
+            print("Flownex not available")
             return None
         
         #if if project path changed, close old project and open new one
@@ -85,7 +85,7 @@ class FNXApi:
             import IPS
             from IPS import Core
             IPS.Core.FlownexSEDotNet.InitialiseAssemblyResolver(flownexPath)
-            ProjectRootPath = projectPath[:-len('.proj')] + '_project\\'
+            ProjectRootPath = projectPath[:-len('.proj')] + '_project' + os.sep
             RunningInstances = IPS.Core.FlownexSEDotNet.GetRunningFlownexInstances()
             
             if RunningInstances:
@@ -111,7 +111,7 @@ class FNXApi:
             print("Run registercomapi.bat as Administrator from the Flownex install directory to rectify this")
         
     def IsFnxAvailable(self):
-        return self.FlownexInstalltionDetected
+        return self.FlownexInstallationDetected
     
     def LaunchFlownexIfNeeded(self, projectPath: str):
         self.AttachToProject(projectPath)
@@ -155,7 +155,7 @@ class FNXApi:
         try:
             _cachedProperty = self._GetCachedProperty(componentIdentifier, propertyIdentifier)
             if _cachedProperty is None:
-                print(f"Error setting property value: " + componentIdentifier + "." + propertyIdentifier)
+                print(f"Error getting property value: " + componentIdentifier + "." + propertyIdentifier)
                 return
             valueStr = _cachedProperty.GetValueAsString()
 
@@ -194,7 +194,7 @@ class FNXApi:
             print(f"Error getting property value: {e} :" + componentIdentifier + "." + propertyIdentifier)
         return None       
 
-    #for general prooerties that do not need units 
+    #for general properties that do not need units 
     def SetPropertyValue(self, componentIdentifier: str, propertyIdentifier: str, value: str):
         if self.AttachedProject is None or self.SimulationController is None or self.NetworkBuilder is None:
             return
@@ -214,7 +214,7 @@ class FNXApi:
         try:
             _cachedProperty = self._GetCachedProperty(componentIdentifier, propertyIdentifier)
             if _cachedProperty is None:
-                print(f"Error setting property value: " + componentIdentifier + "." + propertyIdentifier)
+                print(f"Error getting property value: " + componentIdentifier + "." + propertyIdentifier)
                 return
             valueStr = _cachedProperty.GetValueAsString()
             if valueStr is not None:

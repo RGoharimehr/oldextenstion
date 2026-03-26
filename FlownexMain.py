@@ -197,7 +197,7 @@ class FlownexMain:
                     if self._FlownexAPI.IsFnxAvailable():                                           
                         ui.Label("Flownex installation detected", style={"color": cl("#33ff33"), "font_size": 20})
                     else:
-                        ui.Label("Flownex installatin not detected", style={"color": cl("#ff3333"), "font_size": 20})
+                        ui.Label("Flownex installation not detected", style={"color": cl("#ff3333"), "font_size": 20})
 
                 with ui.HStack(height=30):
                     ui.Label("Flownex Project File:", width=150, style={"font_size": 20})

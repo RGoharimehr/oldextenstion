@@ -219,7 +219,7 @@ def color_map(norm: float, cmap: str = "blue-white-red") -> Tuple[float, float, 
         return cm.get_cmap("viridis")(norm)[:3]
 
 
-def _load_component_to_prim_map(mapping_json_path: str) -> Dict[str, str]:
+def _load_component_to_prim_map(mapping_json_path: str) -> Dict[str, List[str]]:
     """
     Load mapping of { ComponentIdentifier: primPath } from JSON.
     """
