@@ -8,6 +8,8 @@
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
     rel="stylesheet" crossorigin="anonymous"
   />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+    crossorigin="anonymous"></script>
   <style>
     body { background:#1a1d23; color:#e0e0e0; }
     .nav-tabs .nav-link           { color:#aaa; }
@@ -47,6 +49,7 @@
     <li class="nav-item"><a class="nav-link active"  data-bs-toggle="tab" href="#tab-operating">Operating Conditions</a></li>
     <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-geometry" >Geometrical Design</a></li>
     <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-results"  >Results</a></li>
+    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-plot"     >Plotting</a></li>
     <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-viz"      >Visualization</a></li>
     <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-mapping"  >Results Mapping</a></li>
     <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-config"   >Configuration</a></li>
@@ -149,6 +152,68 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         PLOTTING
+         ============================================================ -->
+    <div class="tab-pane fade" id="tab-plot">
+      <div class="row g-3">
+
+        <!-- Controls -->
+        <div class="col-12 col-lg-3">
+          <div class="card h-100">
+            <div class="card-header">Plot Settings</div>
+            <div class="card-body">
+
+              <div class="mb-3">
+                <label class="form-label">X Axis</label>
+                <select id="plot-x-axis" class="form-select form-select-sm">
+                  <option value="Time">Time (s)</option>
+                </select>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Y Axis – select one or more</label>
+                <div id="plot-y-checkboxes" style="max-height:300px;overflow-y:auto;">
+                  <p class="text-muted small">Run a simulation to see available outputs.</p>
+                </div>
+              </div>
+
+              <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="plot-auto-refresh" />
+                <label class="form-check-label" for="plot-auto-refresh">Auto-refresh (2 s)</label>
+              </div>
+
+              <button class="btn btn-primary btn-sm w-100" onclick="renderPlot()">
+                📈 Plot
+              </button>
+              <button class="btn btn-outline-secondary btn-sm w-100 mt-2" onclick="clearPlot()">
+                🗑 Clear
+              </button>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Chart canvas -->
+        <div class="col-12 col-lg-9">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span>Time-Series Chart</span>
+              <span id="plot-point-count" class="small text-muted"></span>
+            </div>
+            <div class="card-body p-2" style="position:relative;min-height:400px;">
+              <canvas id="plot-canvas"></canvas>
+              <p id="plot-no-data" class="text-muted text-center mt-5">
+                No history data yet — run a transient or steady-state simulation first,
+                then select variables and click <strong>Plot</strong>.
+              </p>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -366,8 +431,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadVizSettings();
   refreshStatus();
   startStatusPolling();
-});
 
+  // Wire up plot auto-refresh checkbox (must be done here so the element exists)
+  document.getElementById("plot-auto-refresh").addEventListener("change", function () {
+    if (this.checked) {
+      _plotAutoTimer = setInterval(async () => {
+        // Only re-plot when data may have changed (transient running or first draw)
+        const s = await api("GET", "/api/simulation/status");
+        if (s && (s.transientRunning || Object.keys(s.outputs || {}).length)) {
+          renderPlot();
+        }
+      }, 2000);
+    } else {
+      stopPlotAutoRefresh();
+    }
+  });
+});
 // ============================================================
 // Config
 // ============================================================
@@ -458,6 +537,7 @@ async function loadOutputDefs() {
     cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
 
   renderResultsTable();
+  buildPlotYCheckboxes();
 }
 
 // ============================================================
@@ -659,8 +739,121 @@ async function runSteadyState(loadDefaults) {
 }
 
 // ============================================================
-// Helpers
+// Plotting
 // ============================================================
+const PLOT_COLORS = [
+  '#00E6D9','#FF007F','#9D6CFF','#FFD700','#32CD32','#FF5733',
+  '#60B3FF','#FF9F40','#4BC0C0','#FF6384',
+];
+let _plotChart          = null;
+let _plotAutoTimer      = null;
+
+// Called from loadOutputDefs() when outputs are loaded so checkboxes are ready
+function buildPlotYCheckboxes() {
+  const container = document.getElementById("plot-y-checkboxes");
+  if (!outputDefs || !outputDefs.length) return;
+  container.innerHTML = outputDefs.map(o => {
+    const uid = `plot-y-${o.key}`;
+    const lbl = o.description ? `${esc(o.description)} [${esc(o.unit || o.key)}]` : esc(o.key);
+    return `
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="checkbox" id="${uid}" value="${esc(o.key)}" />
+        <label class="form-check-label small" for="${uid}">${lbl}</label>
+      </div>`;
+  }).join("");
+}
+
+async function renderPlot() {
+  const history = await api("GET", "/api/history");
+  if (!history || !history.length) {
+    document.getElementById("plot-no-data").style.display = "";
+    if (_plotChart) { _plotChart.destroy(); _plotChart = null; }
+    document.getElementById("plot-point-count").textContent = "";
+    return;
+  }
+
+  const xKey    = document.getElementById("plot-x-axis").value || "Time";
+  const yKeys   = Array.from(
+    document.querySelectorAll("#plot-y-checkboxes input[type=checkbox]:checked")
+  ).map(cb => cb.value);
+
+  if (!yKeys.length) {
+    document.getElementById("plot-no-data").textContent =
+      "Select at least one Y-axis variable, then click Plot.";
+    document.getElementById("plot-no-data").style.display = "";
+    return;
+  }
+
+  document.getElementById("plot-no-data").style.display = "none";
+  document.getElementById("plot-point-count").textContent =
+    `${history.length} data point${history.length !== 1 ? "s" : ""}`;
+
+  const xData = history.map(d => d[xKey] ?? null);
+  const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
+
+  const datasets = yKeys.map((key, i) => ({
+    label:           defMap[key] ? `${defMap[key].description || key} [${defMap[key].unit || ""}]` : key,
+    data:            history.map(d => d[key] ?? null),
+    borderColor:     PLOT_COLORS[i % PLOT_COLORS.length],
+    backgroundColor: PLOT_COLORS[i % PLOT_COLORS.length] + "33",
+    borderWidth:     2,
+    pointRadius:     history.length > 100 ? 0 : 3,
+    tension:         0.2,
+    spanGaps:        true,
+  }));
+
+  const cfg = {
+    type: "line",
+    data: { labels: xData, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: {
+          ticks: { color: "#aaa", maxTicksLimit: 12 },
+          grid:  { color: "#333" },
+          title: { display: true, text: xKey, color: "#ccc" },
+        },
+        y: {
+          ticks: { color: "#aaa" },
+          grid:  { color: "#333" },
+          title: { display: true, text: "Value", color: "#ccc" },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: "#ddd", boxWidth: 14 } },
+        tooltip: { mode: "index", intersect: false },
+      },
+    },
+  };
+
+  const canvas = document.getElementById("plot-canvas");
+  canvas.style.minHeight = "380px";
+  if (_plotChart) {
+    _plotChart.data   = cfg.data;
+    _plotChart.options = cfg.options;
+    _plotChart.update("none");
+  } else {
+    _plotChart = new Chart(canvas, cfg);
+  }
+}
+
+function clearPlot() {
+  if (_plotChart) { _plotChart.destroy(); _plotChart = null; }
+  document.getElementById("plot-no-data").style.display = "";
+  document.getElementById("plot-no-data").textContent =
+    "No history data yet — run a transient or steady-state simulation first, then select variables and click Plot.";
+  document.getElementById("plot-point-count").textContent = "";
+  stopPlotAutoRefresh();
+  document.getElementById("plot-auto-refresh").checked = false;
+}
+
+function stopPlotAutoRefresh() {
+  if (_plotAutoTimer) { clearInterval(_plotAutoTimer); _plotAutoTimer = null; }
+}
+
+
 async function api(method, url, body) {
   try {
     const opts = { method, headers: { "Content-Type": "application/json" } };

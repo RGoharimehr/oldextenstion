@@ -28,19 +28,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-# Flask is not bundled with Omniverse's Python; install it on first load via
-# the same omni.kit.pipapi mechanism already used for pythonnet in fnx_api.py.
-import omni.kit.pipapi
-omni.kit.pipapi.install(
-    package="flask",
-    module="flask",
-    ignore_import_check=False,
-    ignore_cache=False,
-    use_online_index=True,
-    surpress_output=False,
-    extra_args=[],
-)
-
 from flask import Flask, jsonify, request, send_from_directory
 
 # ---------------------------------------------------------------------------
