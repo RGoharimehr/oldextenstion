@@ -6,36 +6,34 @@
   <title>Flownex Web Interface</title>
   <link
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-    crossorigin="anonymous"
+    rel="stylesheet" crossorigin="anonymous"
   />
   <style>
-    body { background: #1a1d23; color: #e0e0e0; }
-    .navbar-brand img { height: 32px; margin-right: 8px; }
-    .nav-tabs .nav-link { color: #aaa; }
-    .nav-tabs .nav-link.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .card { background: #23262e; border: 1px solid #333; }
-    .card-header { background: #1e2128; border-bottom: 1px solid #333; font-weight: 600; }
-    .form-control, .form-select, .form-range { background: #2a2d35; color: #e0e0e0; border-color: #444; }
-    .form-control:focus, .form-select:focus { background: #2a2d35; color: #e0e0e0; border-color: #0d6efd; box-shadow: none; }
-    .form-control[readonly] { background: #1e2128; }
-    .badge-ok { background: #198754; }
-    .badge-err { background: #dc3545; }
-    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-    .status-dot.online { background: #198754; }
-    .status-dot.offline { background: #dc3545; }
-    #log-area { font-family: monospace; font-size: 0.78rem; max-height: 200px; overflow-y: auto; background: #12141a; border: 1px solid #333; padding: 8px; border-radius: 4px; }
-    .output-table td, .output-table th { font-size: 0.88rem; }
-    .slider-label { min-width: 60px; text-align: right; font-size: 0.85rem; color: #aaa; }
-    .input-group-text { background: #2a2d35; color: #aaa; border-color: #444; }
-    label.form-label { font-size: 0.88rem; color: #ccc; }
-    h6 { color: #90caf9; }
+    body { background:#1a1d23; color:#e0e0e0; }
+    .nav-tabs .nav-link           { color:#aaa; }
+    .nav-tabs .nav-link.active    { background:#0d6efd; color:#fff; border-color:#0d6efd; }
+    .card                         { background:#23262e; border:1px solid #333; }
+    .card-header                  { background:#1e2128; border-bottom:1px solid #333; font-weight:600; }
+    .form-control,.form-select    { background:#2a2d35; color:#e0e0e0; border-color:#444; }
+    .form-control:focus,
+    .form-select:focus             { background:#2a2d35; color:#e0e0e0; border-color:#0d6efd; box-shadow:none; }
+    .form-control[readonly]       { background:#1e2128; }
+    #log-area                     { font-family:monospace; font-size:.78rem; max-height:200px;
+                                    overflow-y:auto; background:#12141a; border:1px solid #333;
+                                    padding:8px; border-radius:4px; }
+    .output-table td,
+    .output-table th              { font-size:.88rem; }
+    .slider-label                 { min-width:60px; text-align:right; font-size:.85rem; color:#aaa; }
+    label.form-label              { font-size:.88rem; color:#ccc; }
+    h6                            { color:#90caf9; }
+    .text-ok                      { color:#4caf50; }
+    .text-err                     { color:#f44336; }
   </style>
 </head>
 <body>
 
 <!-- Navbar -->
-<nav class="navbar navbar-dark" style="background:#12141a; border-bottom:1px solid #333;">
+<nav class="navbar navbar-dark" style="background:#12141a;border-bottom:1px solid #333;">
   <div class="container-fluid">
     <span class="navbar-brand fw-bold">⚙ Flownex Web Interface</span>
     <span id="status-badge" class="badge bg-secondary">Connecting…</span>
@@ -43,28 +41,34 @@
 </nav>
 
 <div class="container-fluid mt-3">
-  <!-- Tabs -->
+
+  <!-- Tab navigation -->
   <ul class="nav nav-tabs mb-3" id="mainTabs">
-    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-operating">Operating Conditions</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-geometry">Geometrical Design</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-results">Results</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-config">Configuration</a></li>
+    <li class="nav-item"><a class="nav-link active"  data-bs-toggle="tab" href="#tab-operating">Operating Conditions</a></li>
+    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-geometry" >Geometrical Design</a></li>
+    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-results"  >Results</a></li>
+    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-viz"      >Visualization</a></li>
+    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-mapping"  >Results Mapping</a></li>
+    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-config"   >Configuration</a></li>
   </ul>
 
   <div class="tab-content">
 
-    <!-- =================== OPERATING CONDITIONS =================== -->
+    <!-- ============================================================
+         OPERATING CONDITIONS
+         ============================================================ -->
     <div class="tab-pane fade show active" id="tab-operating">
       <div class="row g-3">
+
         <!-- Simulation control -->
         <div class="col-12">
           <div class="card">
             <div class="card-header">Flownex Simulation Control</div>
             <div class="card-body d-flex flex-wrap gap-2">
-              <button id="btn-start-transient"  class="btn btn-success btn-sm" onclick="startTransient()">▶ Start Transient</button>
-              <button id="btn-stop-transient"   class="btn btn-danger btn-sm"  onclick="stopTransient()"  disabled>⏹ Stop Transient</button>
-              <button id="btn-steady-state"     class="btn btn-primary btn-sm" onclick="runSteadyState(false)">🔁 Solve Steady State</button>
-              <button id="btn-load-defaults"    class="btn btn-secondary btn-sm" onclick="runSteadyState(true)">⚙ Load Defaults &amp; Solve</button>
+              <button id="btn-start-transient" class="btn btn-success  btn-sm" onclick="startTransient()">▶ Start Transient</button>
+              <button id="btn-stop-transient"  class="btn btn-danger   btn-sm" onclick="stopTransient()"  disabled>⏹ Stop Transient</button>
+              <button id="btn-steady-state"    class="btn btn-primary  btn-sm" onclick="runSteadyState(false)">🔁 Solve Steady State</button>
+              <button id="btn-load-defaults"   class="btn btn-secondary btn-sm" onclick="runSteadyState(true)">⚙ Load Defaults &amp; Solve</button>
             </div>
           </div>
         </div>
@@ -79,14 +83,16 @@
           </div>
         </div>
 
-        <!-- Live output summary -->
+        <!-- Live outputs -->
         <div class="col-lg-6">
           <div class="card h-100">
             <div class="card-header">Live Output Values</div>
             <div class="card-body p-0">
               <table class="table table-sm table-dark table-hover mb-0 output-table">
                 <thead><tr><th>Key</th><th>Value</th><th>Unit</th></tr></thead>
-                <tbody id="live-outputs-body"><tr><td colspan="3" class="text-muted">No data yet</td></tr></tbody>
+                <tbody id="live-outputs-body">
+                  <tr><td colspan="3" class="text-muted">No data yet</td></tr>
+                </tbody>
               </table>
             </div>
           </div>
@@ -96,15 +102,16 @@
         <div class="col-12">
           <div class="card">
             <div class="card-header">Log</div>
-            <div class="card-body p-2">
-              <div id="log-area"></div>
-            </div>
+            <div class="card-body p-2"><div id="log-area"></div></div>
           </div>
         </div>
+
       </div>
     </div>
 
-    <!-- =================== GEOMETRICAL DESIGN =================== -->
+    <!-- ============================================================
+         GEOMETRICAL DESIGN
+         ============================================================ -->
     <div class="tab-pane fade" id="tab-geometry">
       <div class="row g-3">
         <div class="col-12">
@@ -118,10 +125,11 @@
       </div>
     </div>
 
-    <!-- =================== RESULTS =================== -->
+    <!-- ============================================================
+         RESULTS
+         ============================================================ -->
     <div class="tab-pane fade" id="tab-results">
       <div class="row g-3">
-        <!-- Category filter -->
         <div class="col-12 col-md-4">
           <label class="form-label">Filter by Category</label>
           <select id="results-category-filter" class="form-select form-select-sm" onchange="renderResultsTable()">
@@ -133,9 +141,7 @@
             <div class="card-header">Simulation Results</div>
             <div class="card-body p-0">
               <table class="table table-sm table-dark table-hover mb-0 output-table">
-                <thead>
-                  <tr><th>Category</th><th>Key</th><th>Description</th><th>Value</th><th>Unit</th></tr>
-                </thead>
+                <thead><tr><th>Category</th><th>Key</th><th>Description</th><th>Value</th><th>Unit</th></tr></thead>
                 <tbody id="results-body">
                   <tr><td colspan="5" class="text-muted">Run a simulation to see results.</td></tr>
                 </tbody>
@@ -146,25 +152,157 @@
       </div>
     </div>
 
-    <!-- =================== CONFIGURATION =================== -->
+    <!-- ============================================================
+         VISUALIZATION SETTINGS
+         ============================================================ -->
+    <div class="tab-pane fade" id="tab-viz">
+      <div class="row g-3">
+        <div class="col-12 col-lg-6">
+          <div class="card">
+            <div class="card-header">USD Prim Colorization (applied in Omniverse viewport)</div>
+            <div class="card-body">
+
+              <div class="mb-3">
+                <label class="form-label">Property to Visualize</label>
+                <select id="viz-property" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Colormap</label>
+                <select id="viz-colormap" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
+              </div>
+
+              <div class="mb-3">
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" id="viz-manual-check"
+                    onchange="toggleManualBounds(this.checked)" />
+                  <label class="form-check-label" for="viz-manual-check">Set Manual Bounds</label>
+                </div>
+                <div class="row g-2" id="viz-bounds-row" style="display:none!important">
+                  <div class="col-6">
+                    <label class="form-label">Min</label>
+                    <input type="number" id="viz-min" class="form-control form-control-sm"
+                      placeholder="Auto" onchange="saveVizSettings()" disabled />
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label">Max</label>
+                    <input type="number" id="viz-max" class="form-control form-control-sm"
+                      placeholder="Auto" onchange="saveVizSettings()" disabled />
+                  </div>
+                </div>
+              </div>
+
+              <button class="btn btn-primary btn-sm" onclick="saveVizSettings()">
+                💾 Apply Viz Settings
+              </button>
+              <span id="viz-save-msg" class="ms-2 small text-success d-none">Saved!</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+          <div class="card">
+            <div class="card-header">How it works</div>
+            <div class="card-body small text-muted">
+              <p>
+                After each simulation step the Omniverse extension reads these settings
+                and colours USD prims in the 3D viewport using the selected property
+                and colormap.
+              </p>
+              <p>
+                The colorization uses <strong>strongerThanDescendants</strong> binding
+                on the parent Xform, so all child geometry is covered automatically.
+              </p>
+              <p>
+                When no data is available for a prim the fallback material
+                <code>/World/Looks/Aluminum_Foil</code> is applied (or silver if not
+                present in the stage).
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         RESULTS MAPPING
+         ============================================================ -->
+    <div class="tab-pane fade" id="tab-mapping">
+      <div class="row g-3">
+
+        <div class="col-12 col-lg-6">
+          <div class="card">
+            <div class="card-header">1 · Add Flownex Attribute to Prims</div>
+            <div class="card-body">
+              <p class="small text-muted mb-2">
+                Adds a <code>flownex:componentName</code> attribute to every prim under
+                the target path so you can assign component identifiers in the Property
+                panel.
+              </p>
+              <div class="mb-3">
+                <label class="form-label">Target Prim Path</label>
+                <input type="text" id="mapping-root" class="form-control form-control-sm" value="/World" />
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="mappingAddAttribute()">
+                Start Prim Property Override
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+          <div class="card">
+            <div class="card-header">2 · Generate Mapping Config File</div>
+            <div class="card-body">
+              <p class="small text-muted mb-2">
+                Matches prims whose <code>flownex:componentName</code> value equals a
+                <em>ComponentIdentifier</em> in Outputs.csv and writes
+                <strong>FlownexMapping.json</strong> to the IO directory.
+              </p>
+              <button class="btn btn-success btn-sm" onclick="mappingGenerate()">
+                Generate FlownexMapping.json
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">Mapping Log</div>
+            <div class="card-body p-2">
+              <div id="mapping-log" class="small" style="font-family:monospace; min-height:60px;"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ============================================================
+         CONFIGURATION
+         ============================================================ -->
     <div class="tab-pane fade" id="tab-config">
       <div class="row g-3">
+
         <div class="col-12 col-lg-8">
           <div class="card">
             <div class="card-header">Flownex Configuration</div>
             <div class="card-body">
               <div class="mb-3">
                 <label class="form-label">Flownex Project File (.proj / .projz)</label>
-                <input type="text" id="cfg-project" class="form-control form-control-sm" placeholder="D:\path\to\project.proj" />
+                <input type="text" id="cfg-project" class="form-control form-control-sm"
+                  placeholder="D:\path\to\project.proj" />
               </div>
               <div class="mb-3">
                 <label class="form-label">IO Definition Directory</label>
-                <input type="text" id="cfg-io-dir" class="form-control form-control-sm" placeholder="D:\path\to\IOFiles" />
+                <input type="text" id="cfg-io-dir" class="form-control form-control-sm"
+                  placeholder="D:\path\to\IOFiles" />
               </div>
               <div class="row mb-3">
                 <div class="col-md-6">
                   <label class="form-label">Result Polling Interval (s)</label>
-                  <input type="number" id="cfg-poll-interval" class="form-control form-control-sm" min="0.25" max="10" step="0.25" />
+                  <input type="number" id="cfg-poll-interval" class="form-control form-control-sm"
+                    min="0.25" max="10" step="0.25" />
                 </div>
                 <div class="col-md-6 d-flex align-items-end">
                   <div class="form-check">
@@ -173,34 +311,48 @@
                   </div>
                 </div>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="saveConfig()">💾 Save Configuration</button>
+              <button class="btn btn-primary btn-sm" onclick="saveConfig()">
+                💾 Save Configuration
+              </button>
               <span id="cfg-save-msg" class="ms-2 small text-success d-none">Saved!</span>
             </div>
           </div>
         </div>
+
         <div class="col-12 col-lg-4">
           <div class="card">
             <div class="card-header">Flownex API Status</div>
             <div class="card-body small">
-              <p>Flownex installation: <span id="fnx-avail-label" class="fw-bold">Unknown</span></p>
-              <p>Project connected: <span id="fnx-conn-label" class="fw-bold">Unknown</span></p>
+              <p>Installation detected: <span id="fnx-avail-label" class="fw-bold">…</span></p>
+              <p>Project connected:     <span id="fnx-conn-label"  class="fw-bold">…</span></p>
               <button class="btn btn-outline-light btn-sm" onclick="refreshStatus()">🔄 Refresh</button>
             </div>
           </div>
         </div>
+
       </div>
     </div>
 
-  </div><!-- tab-content -->
-</div><!-- container -->
+  </div><!-- /tab-content -->
+</div><!-- /container -->
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+  crossorigin="anonymous"></script>
 <script>
+// ============================================================
+// Constants
+// ============================================================
+const STATUS_POLL_INTERVAL_MS = 2000;
+// Formatting thresholds: values below this use more decimal places
+const FMT_SMALL_THRESHOLD = 10;
+const FMT_SMALL_DECIMALS  = 4;
+const FMT_LARGE_DECIMALS  = 2;
+
 // ============================================================
 // State
 // ============================================================
-let outputDefs = [];       // [{key, description, unit, category, …}]
-let currentOutputs = {};   // {key: value}
+let outputDefs      = [];
+let currentOutputs  = {};
 let statusPollTimer = null;
 
 // ============================================================
@@ -211,6 +363,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadInputs("dynamic");
   await loadInputs("static");
   await loadOutputDefs();
+  await loadVizSettings();
   refreshStatus();
   startStatusPolling();
 });
@@ -221,25 +374,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function loadConfig() {
   const cfg = await api("GET", "/api/config");
   if (!cfg) return;
-  document.getElementById("cfg-project").value = cfg.FlownexProject || "";
-  document.getElementById("cfg-io-dir").value = cfg.IOFileDirectory || "";
+  document.getElementById("cfg-project").value       = cfg.FlownexProject      || "";
+  document.getElementById("cfg-io-dir").value        = cfg.IOFileDirectory      || "";
   document.getElementById("cfg-poll-interval").value = cfg.ResultPollingInterval || "1.0";
   document.getElementById("cfg-solve-on-change").checked = !!cfg.SolveOnChange;
 }
 
 async function saveConfig() {
   const body = {
-    FlownexProject: document.getElementById("cfg-project").value,
-    IOFileDirectory: document.getElementById("cfg-io-dir").value,
+    FlownexProject:       document.getElementById("cfg-project").value,
+    IOFileDirectory:      document.getElementById("cfg-io-dir").value,
     ResultPollingInterval: document.getElementById("cfg-poll-interval").value,
-    SolveOnChange: document.getElementById("cfg-solve-on-change").checked,
+    SolveOnChange:        document.getElementById("cfg-solve-on-change").checked,
   };
   const res = await api("POST", "/api/config", body);
   if (res && res.ok) {
-    const msg = document.getElementById("cfg-save-msg");
-    msg.classList.remove("d-none");
-    setTimeout(() => msg.classList.add("d-none"), 2000);
-    // Reload inputs in case IO dir changed
+    flash("cfg-save-msg");
+    // Reload inputs/outputs in case IO dir changed
     await loadInputs("dynamic");
     await loadInputs("static");
     await loadOutputDefs();
@@ -250,11 +401,11 @@ async function saveConfig() {
 // Inputs
 // ============================================================
 async function loadInputs(kind) {
-  const url = kind === "static" ? "/api/static-inputs" : "/api/inputs";
-  const inputs = await api("GET", url);
+  const url         = kind === "static" ? "/api/static-inputs" : "/api/inputs";
   const containerId = kind === "static" ? "static-inputs-container" : "dynamic-inputs-container";
-  const container = document.getElementById(containerId);
-  if (!inputs || inputs.length === 0) {
+  const inputs      = await api("GET", url);
+  const container   = document.getElementById(containerId);
+  if (!inputs || !inputs.length) {
     container.innerHTML = '<p class="text-muted small">No inputs defined. Check IO directory in Configuration.</p>';
     return;
   }
@@ -267,23 +418,25 @@ function buildInputsHtml(inputs, kind) {
     if (inp.editType === "checkbox") {
       return `
         <div class="d-flex align-items-center mb-2 gap-2">
-          <input class="form-check-input" type="checkbox" id="${uid}" ${inp.defaultValue ? "checked" : ""}
-            onchange="onInputChange('${inp.key}', this.checked)" />
+          <input class="form-check-input" type="checkbox" id="${uid}"
+            ${inp.defaultValue ? "checked" : ""}
+            onchange="onInputChange('${esc(inp.key)}', this.checked)" />
           <label class="form-check-label" for="${uid}">${esc(inp.description)}</label>
         </div>`;
-    } else {
-      return `
-        <div class="mb-3">
-          <label class="form-label" for="${uid}">${esc(inp.description)} ${inp.unit ? `[${esc(inp.unit)}]` : ""}</label>
-          <div class="d-flex align-items-center gap-2">
-            <input type="range" class="form-range flex-grow-1" id="${uid}"
-              min="${inp.min}" max="${inp.max}" step="${inp.step}" value="${inp.defaultValue}"
-              oninput="document.getElementById('lbl-${uid}').textContent=this.value"
-              onchange="onInputChange('${inp.key}', parseFloat(this.value))" />
-            <span id="lbl-${uid}" class="slider-label">${inp.defaultValue}</span>
-          </div>
-        </div>`;
     }
+    return `
+      <div class="mb-3">
+        <label class="form-label" for="${uid}">
+          ${esc(inp.description)}${inp.unit ? ` [${esc(inp.unit)}]` : ""}
+        </label>
+        <div class="d-flex align-items-center gap-2">
+          <input type="range" class="form-range flex-grow-1" id="${uid}"
+            min="${inp.min}" max="${inp.max}" step="${inp.step}" value="${inp.defaultValue}"
+            oninput="document.getElementById('lbl-${uid}').textContent = this.value"
+            onchange="onInputChange('${esc(inp.key)}', parseFloat(this.value))" />
+          <span id="lbl-${uid}" class="slider-label">${inp.defaultValue}</span>
+        </div>
+      </div>`;
   }).join("");
 }
 
@@ -298,9 +451,11 @@ async function loadOutputDefs() {
   outputDefs = await api("GET", "/api/outputs") || [];
 
   // Populate category filter
-  const sel = document.getElementById("results-category-filter");
+  const sel  = document.getElementById("results-category-filter");
   const cats = [...new Set(outputDefs.map(o => o.category).filter(Boolean))];
-  sel.innerHTML = '<option value="">— All —</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  sel.innerHTML =
+    '<option value="">— All —</option>' +
+    cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
 
   renderResultsTable();
 }
@@ -310,37 +465,37 @@ async function loadOutputDefs() {
 // ============================================================
 function startStatusPolling() {
   if (statusPollTimer) clearInterval(statusPollTimer);
-  statusPollTimer = setInterval(refreshStatus, 2000);
+  statusPollTimer = setInterval(refreshStatus, STATUS_POLL_INTERVAL_MS);
 }
 
 async function refreshStatus() {
   const s = await api("GET", "/api/simulation/status");
   if (!s) return;
 
-  // Status badge
+  // Navbar badge
   const badge = document.getElementById("status-badge");
   if (s.transientRunning) {
-    badge.textContent = "⏩ Transient Running";
-    badge.className = "badge bg-success";
+    badge.textContent = "⏩ Transient Running";  badge.className = "badge bg-success";
   } else if (s.connected) {
-    badge.textContent = "✅ Connected";
-    badge.className = "badge bg-primary";
+    badge.textContent = "✅ Connected";          badge.className = "badge bg-primary";
   } else {
-    badge.textContent = s.flownexAvailable ? "⚡ Ready (not connected)" : "⚠ Flownex Unavailable";
-    badge.className = s.flownexAvailable ? "badge bg-warning text-dark" : "badge bg-danger";
+    badge.textContent = s.flownexAvailable ? "⚡ Ready" : "⚠ Flownex Unavailable";
+    badge.className   = s.flownexAvailable ? "badge bg-warning text-dark" : "badge bg-danger";
   }
 
   // Config tab indicators
-  document.getElementById("fnx-avail-label").textContent = s.flownexAvailable ? "✅ Detected" : "❌ Not found";
-  document.getElementById("fnx-avail-label").className = s.flownexAvailable ? "fw-bold text-success" : "fw-bold text-danger";
-  document.getElementById("fnx-conn-label").textContent = s.connected ? "✅ Yes" : "❌ No";
-  document.getElementById("fnx-conn-label").className = s.connected ? "fw-bold text-success" : "fw-bold text-danger";
+  document.getElementById("fnx-avail-label").innerHTML =
+    s.flownexAvailable ? '<span class="text-success">✅ Detected</span>'
+                       : '<span class="text-danger">❌ Not found</span>';
+  document.getElementById("fnx-conn-label").innerHTML  =
+    s.connected        ? '<span class="text-success">✅ Yes</span>'
+                       : '<span class="text-danger">❌ No</span>';
 
   // Button states
   document.getElementById("btn-start-transient").disabled = s.transientRunning;
-  document.getElementById("btn-stop-transient").disabled  = !s.transientRunning;
-  document.getElementById("btn-steady-state").disabled    = s.transientRunning;
-  document.getElementById("btn-load-defaults").disabled   = s.transientRunning;
+  document.getElementById("btn-stop-transient") .disabled = !s.transientRunning;
+  document.getElementById("btn-steady-state")   .disabled = s.transientRunning;
+  document.getElementById("btn-load-defaults")  .disabled = s.transientRunning;
 
   // Outputs
   currentOutputs = s.outputs || {};
@@ -348,39 +503,42 @@ async function refreshStatus() {
   renderResultsTable();
 
   // Log
-  const logArea = document.getElementById("log-area");
   if (s.log && s.log.length) {
+    const logArea = document.getElementById("log-area");
     logArea.innerHTML = s.log.map(l => `<div>${esc(l)}</div>`).join("");
     logArea.scrollTop = logArea.scrollHeight;
   }
 }
 
 function updateLiveOutputsTable() {
-  const tbody = document.getElementById("live-outputs-body");
+  const tbody   = document.getElementById("live-outputs-body");
   const entries = Object.entries(currentOutputs);
   if (!entries.length) {
     tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No data yet</td></tr>';
     return;
   }
-  // Match key to unit from outputDefs
-  const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
-  tbody.innerHTML = entries.map(([k, v]) => {
-    const def = defMap[k] || {};
-    return `<tr><td>${esc(k)}</td><td>${fmtVal(v)}</td><td class="text-muted">${esc(def.unit || "")}</td></tr>`;
-  }).join("");
+  const defMap  = Object.fromEntries(outputDefs.map(o => [o.key, o]));
+  tbody.innerHTML = entries
+    .map(([k, v]) => {
+      const def = defMap[k] || {};
+      return `<tr><td>${esc(k)}</td><td>${fmtVal(v)}</td><td class="text-muted">${esc(def.unit || "")}</td></tr>`;
+    })
+    .join("");
 }
 
 function renderResultsTable() {
   const filterCat = document.getElementById("results-category-filter").value;
-  const tbody = document.getElementById("results-body");
-  const filtered = filterCat ? outputDefs.filter(o => o.category === filterCat) : outputDefs;
+  const tbody     = document.getElementById("results-body");
+  const filtered  = filterCat ? outputDefs.filter(o => o.category === filterCat) : outputDefs;
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No outputs defined.</td></tr>';
     return;
   }
   tbody.innerHTML = filtered.map(o => {
-    const val = currentOutputs[o.key];
-    const valStr = val !== undefined && val !== null ? fmtVal(val) : '<span class="text-muted">—</span>';
+    const val    = currentOutputs[o.key];
+    const valStr = (val !== undefined && val !== null)
+      ? fmtVal(val)
+      : '<span class="text-muted">—</span>';
     return `<tr>
       <td>${esc(o.category)}</td>
       <td>${esc(o.key)}</td>
@@ -392,27 +550,107 @@ function renderResultsTable() {
 }
 
 // ============================================================
+// Visualization settings
+// ============================================================
+async function loadVizSettings() {
+  const data = await api("GET", "/api/viz/settings");
+  if (!data) return;
+
+  // Populate property dropdown
+  const propSel = document.getElementById("viz-property");
+  propSel.innerHTML = (data.propertyOptions || [])
+    .map((p, i) => `<option value="${i}">${esc(p)}</option>`)
+    .join("");
+
+  // Populate colormap dropdown
+  const cmapSel = document.getElementById("viz-colormap");
+  cmapSel.innerHTML = (data.colormapOptions || [])
+    .map((c, i) => `<option value="${i}">${esc(c)}</option>`)
+    .join("");
+
+  // Restore saved values
+  const s = data.settings || {};
+  propSel.value = s.property_index ?? 0;
+  cmapSel.value = s.colormap_index ?? 0;
+
+  const hasManual = s.manual_min !== null || s.manual_max !== null;
+  document.getElementById("viz-manual-check").checked = hasManual;
+  toggleManualBounds(hasManual);
+  if (hasManual) {
+    document.getElementById("viz-min").value = s.manual_min ?? "";
+    document.getElementById("viz-max").value = s.manual_max ?? "";
+  }
+}
+
+function toggleManualBounds(enabled) {
+  const row = document.getElementById("viz-bounds-row");
+  row.style.setProperty("display", enabled ? "flex" : "none", "important");
+  document.getElementById("viz-min").disabled = !enabled;
+  document.getElementById("viz-max").disabled = !enabled;
+}
+
+async function saveVizSettings() {
+  const useManual = document.getElementById("viz-manual-check").checked;
+  const minVal    = document.getElementById("viz-min").value;
+  const maxVal    = document.getElementById("viz-max").value;
+  const body = {
+    property_index: parseInt(document.getElementById("viz-property").value, 10),
+    colormap_index: parseInt(document.getElementById("viz-colormap").value, 10),
+    manual_min: useManual && minVal !== "" ? parseFloat(minVal) : null,
+    manual_max: useManual && maxVal !== "" ? parseFloat(maxVal) : null,
+  };
+  const res = await api("POST", "/api/viz/settings", body);
+  if (res && res.ok) flash("viz-save-msg");
+}
+
+// ============================================================
+// Results Mapping
+// ============================================================
+async function mappingAddAttribute() {
+  const root = document.getElementById("mapping-root").value || "/World";
+  logMapping("⏳ Adding attribute…");
+  const res = await api("POST", "/api/mapping/add-attribute", { root });
+  logMapping(res ? (res.ok ? "✅ " : "❌ ") + res.message : "❌ No response");
+}
+
+async function mappingGenerate() {
+  logMapping("⏳ Generating FlownexMapping.json…");
+  const res = await api("POST", "/api/mapping/generate");
+  logMapping(res ? (res.ok ? "✅ " : "❌ ") + res.message : "❌ No response");
+}
+
+function logMapping(msg) {
+  const el  = document.getElementById("mapping-log");
+  const div = document.createElement("div");
+  div.className = msg.startsWith("✅") ? "text-ok" : msg.startsWith("❌") ? "text-err" : "";
+  div.textContent = msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ============================================================
 // Simulation control
 // ============================================================
 async function startTransient() {
-  const res = await api("POST", "/api/simulation/start-transient");
-  showToast(res);
+  showToast(await api("POST", "/api/simulation/start-transient"));
 }
 
 async function stopTransient() {
-  const res = await api("POST", "/api/simulation/stop-transient");
-  showToast(res);
+  showToast(await api("POST", "/api/simulation/stop-transient"));
 }
 
 async function runSteadyState(loadDefaults) {
   const url = loadDefaults ? "/api/simulation/load-defaults" : "/api/simulation/steady-state";
-  const btn = loadDefaults ? "btn-load-defaults" : "btn-steady-state";
-  document.getElementById(btn).disabled = true;
-  document.getElementById(btn).textContent = "⏳ Running…";
+  const btn = document.getElementById(loadDefaults ? "btn-load-defaults" : "btn-steady-state");
+  const origText = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = "⏳ Running…";
+
   const res = await api("POST", url);
   showToast(res);
-  document.getElementById(btn).disabled = false;
-  document.getElementById(btn).textContent = loadDefaults ? "⚙ Load Defaults & Solve" : "🔁 Solve Steady State";
+  btn.disabled    = false;
+  btn.textContent = origText;
+
   if (res && res.outputs) {
     currentOutputs = res.outputs;
     updateLiveOutputsTable();
@@ -437,23 +675,29 @@ async function api(method, url, body) {
 
 function fmtVal(v) {
   if (v === null || v === undefined) return "—";
-  if (typeof v === "number") return v.toFixed(Math.abs(v) < 10 ? 4 : 2);
+  if (typeof v === "number")
+    return v.toFixed(Math.abs(v) < FMT_SMALL_THRESHOLD ? FMT_SMALL_DECIMALS : FMT_LARGE_DECIMALS);
   return String(v);
 }
 
 function esc(s) {
-  return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(s || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// Simple toast using Bootstrap 5 toast
+function flash(id) {
+  const el = document.getElementById(id);
+  el.classList.remove("d-none");
+  setTimeout(() => el.classList.add("d-none"), 2000);
+}
+
 function showToast(res) {
   if (!res) return;
-  const msg = (res.ok ? "✅ " : "❌ ") + (res.message || (res.ok ? "OK" : "Error"));
-  // Reuse log area
   const logArea = document.getElementById("log-area");
-  const div = document.createElement("div");
-  div.className = res.ok ? "text-success" : "text-danger";
-  div.textContent = msg;
+  const div     = document.createElement("div");
+  div.className = res.ok ? "text-ok" : "text-err";
+  div.textContent = (res.ok ? "✅ " : "❌ ") + (res.message || (res.ok ? "OK" : "Error"));
   logArea.appendChild(div);
   logArea.scrollTop = logArea.scrollHeight;
 }

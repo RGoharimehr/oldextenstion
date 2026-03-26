@@ -1,467 +1,239 @@
-#!/usr/bin/env python3
 """
 Flownex Web Interface
 =====================
-Standalone Flask REST-API server that exposes Flownex simulation capabilities
-via HTTP so that a browser (or any HTTP client) can control the simulation
-without launching the Omniverse extension UI.
+Flask REST-API server that runs **inside the Omniverse extension process**
+and replaces the omni.ui window with a browser-based UI.
 
-Usage
------
-  python web_app.py [--host 0.0.0.0] [--port 5000]
+Usage (from extension.py)
+--------------------------
+    from . import web_app
+    web_app.start_server(host="0.0.0.0", port=5000)
+    web_app.stop_server()
 
-Then open http://localhost:5000 in any browser.
+The web app uses the same FNXApi / FlownexIO modules as the extension, so
+no separate Flownex connection is made and the same config files are shared.
 
-Architecture
-------------
-* Reads the same FlownexUser.json / Inputs.csv / Outputs.csv files that the
-  Omniverse extension uses, so configuration written in one tool is immediately
-  visible in the other.
-* Wraps the Flownex COM API via pythonnet/clr.  If pythonnet is not installed,
-  or Flownex is not installed on the machine, the server starts in "offline"
-  mode: configuration and file management still work, but simulation calls
-  return a clear error message.
-* Transient simulation runs in a background thread; the /api/simulation/status
-  endpoint lets the browser poll for the latest outputs and history.
+For operations that must run on the Omniverse main thread (USD mutations),
+the extension sets ``_state._event_loop`` at startup so Flask handlers can
+schedule work there via ``_run_on_omni(fn)``.
 """
 
 from __future__ import annotations
 
-import argparse
-import csv
+import asyncio
+import concurrent.futures
 import json
-import os
-import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+from flask import Flask, jsonify, request, send_from_directory
 
 # ---------------------------------------------------------------------------
-# Flask – required
+# Package imports (relative – runs inside Omniverse's Python interpreter)
 # ---------------------------------------------------------------------------
-try:
-    from flask import Flask, jsonify, request, send_from_directory
-except ImportError:
-    print(
-        "[web_app] Flask is not installed.\n"
-        "Install it with:  pip install flask\n"
-    )
-    sys.exit(1)
+from .fnx_api import FNXApi
+from .fnx_io_definition import FlownexIO, InputDefinition, OutputDefinition
+from .viz_utils import COLOR_MAP_OPTIONS, get_visualizable_properties
 
 # ---------------------------------------------------------------------------
-# Paths
+# Constants
 # ---------------------------------------------------------------------------
-_HERE = Path(__file__).parent
-_SETTINGS_FILE = _HERE / "FlownexUser.json"
-_WEB_UI_DIR = _HERE / "web_ui"
-
-# ---------------------------------------------------------------------------
-# Named constants
-# ---------------------------------------------------------------------------
-_DEFAULT_MAX_INPUT_VALUE = 10_000_000  # default upper bound for slider inputs
-_MAX_HISTORY_SIZE = 300                # max simulation data-points retained
-_MAX_LOG_ENTRIES = 200                 # max log lines retained in memory
-
-# ---------------------------------------------------------------------------
-# Flownex COM API (Windows-only, requires pythonnet + Flownex installation)
-# ---------------------------------------------------------------------------
-_CLR_AVAILABLE = False
-try:
-    import clr  # type: ignore  # pythonnet
-    import Microsoft.Win32  # type: ignore
-    _CLR_AVAILABLE = True
-except ImportError:
-    pass
-
-
-def _get_flownex_directory() -> Optional[str]:
-    """Return the Flownex install directory from the Windows registry."""
-    if not _CLR_AVAILABLE:
-        return None
-    try:
-        classes_root = Microsoft.Win32.RegistryKey.OpenBaseKey(
-            Microsoft.Win32.RegistryHive.ClassesRoot,
-            Microsoft.Win32.RegistryView.Default,
-        )
-        clsid_root = classes_root.OpenSubKey("CLSID")
-        fnx_key = clsid_root.OpenSubKey("{FD40D175-FED4-4619-8571-36336DD2B8E1}")
-        if fnx_key is not None:
-            local_server = fnx_key.OpenSubKey("LocalServer32")
-            value = str(local_server.GetValue(None))
-            value = value.replace(" /automation", "")
-            return value.rpartition("FlownexSE.exe")[0]
-    except Exception as exc:
-        print(f"[web_app] Registry lookup failed: {exc}")
-    return None
+_WEB_UI_DIR = Path(__file__).parent / "web_ui"
+_MAX_HISTORY_SIZE = 300   # data-points retained per simulation run (≈5 min at 1 s interval)
+_MAX_LOG_ENTRIES  = 200   # log lines retained; keeps the /api/simulation/status payload small
 
 
 # ---------------------------------------------------------------------------
-# Lightweight config helpers (no omni dependencies)
-# ---------------------------------------------------------------------------
-
-def _read_config() -> Dict[str, Any]:
-    """Return the content of FlownexUser.json as a dict."""
-    if _SETTINGS_FILE.exists():
-        try:
-            return json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
-        except Exception as exc:
-            print(f"[web_app] Cannot read settings: {exc}")
-    return {
-        "FlownexProject": "",
-        "IOFileDirectory": "",
-        "SolveOnChange": False,
-        "ResultPollingInterval": "1.0",
-    }
-
-
-def _write_config(cfg: Dict[str, Any]):
-    """Persist *cfg* to FlownexUser.json."""
-    _SETTINGS_FILE.write_text(
-        json.dumps(cfg, indent=2), encoding="utf-8"
-    )
-
-
-def _load_inputs(kind: str = "dynamic") -> List[Dict[str, Any]]:
-    """
-    Load input definitions from Inputs.csv (dynamic) or StaticInputs.csv.
-    Returns a list of plain dicts for easy JSON serialisation.
-    """
-    cfg = _read_config()
-    io_dir = cfg.get("IOFileDirectory", "")
-    filename = "StaticInputs.csv" if kind == "static" else "Inputs.csv"
-    csv_path = os.path.join(io_dir, filename)
-    if not os.path.isfile(csv_path):
-        return []
-    rows = []
-    with open(csv_path, encoding="utf-8-sig", newline="") as fh:
-        for row in csv.DictReader(fh):
-            try:
-                edit_type = row.get("EditType", "slider")
-                default_raw = row.get("DefaultValue", "0")
-                if edit_type == "checkbox":
-                    default = str(default_raw).lower() in ("true", "1", "yes", "y")
-                else:
-                    default = float(default_raw) if default_raw else 0.0
-                rows.append(
-                    {
-                        "key": row.get("Key", ""),
-                        "description": row.get("Description", ""),
-                        "componentIdentifier": row.get("ComponentIdentifier", ""),
-                        "propertyIdentifier": row.get("PropertyIdentifier", ""),
-                        "editType": edit_type,
-                        "min": float(row.get("Min") or 0),
-                        "max": float(row.get("Max") or 10_000_000),
-                        "step": float(row.get("Step") or 1),
-                        "unit": row.get("Unit", ""),
-                        "defaultValue": default,
-                    }
-                )
-            except Exception:
-                pass
-    return rows
-
-
-def _load_outputs() -> List[Dict[str, Any]]:
-    """Load output definitions from Outputs.csv."""
-    cfg = _read_config()
-    io_dir = cfg.get("IOFileDirectory", "")
-    csv_path = os.path.join(io_dir, "Outputs.csv")
-    if not os.path.isfile(csv_path):
-        return []
-    rows = []
-    with open(csv_path, encoding="utf-8-sig", newline="") as fh:
-        for row in csv.DictReader(fh):
-            rows.append(
-                {
-                    "category": (row.get("Category") or "").strip(),
-                    "key": (row.get("Key") or "").strip(),
-                    "description": (row.get("Description") or "").strip(),
-                    "componentIdentifier": (row.get("ComponentIdentifier") or "").strip(),
-                    "propertyIdentifier": (row.get("PropertyIdentifier") or "").strip(),
-                    "unit": (row.get("Unit") or "").strip(),
-                }
-            )
-    return rows
-
-
-# ---------------------------------------------------------------------------
-# Flownex API wrapper
-# ---------------------------------------------------------------------------
-
-class _FlownexAPI:
-    """
-    Thin wrapper around the Flownex COM API.
-    All methods return graceful errors when the API is unavailable.
-    """
-
-    def __init__(self):
-        self._project = None
-        self._flownex_se = None
-        self._sim_controller = None
-        self._net_builder = None
-        self._prop_cache: Dict[str, Any] = {}
-        self._available = False
-
-        fnx_dir = _get_flownex_directory()
-        if fnx_dir:
-            try:
-                clr.AddReference(fnx_dir + "IPS.Core.dll")
-                import IPS  # type: ignore  # noqa: F401
-                self._available = True
-            except Exception as exc:
-                print(f"[web_app] Cannot load Flownex IPS.Core.dll: {exc}")
-
-    @property
-    def available(self) -> bool:
-        return self._available
-
-    @property
-    def connected(self) -> bool:
-        return self._project is not None
-
-    def attach(self, project_path: str) -> str:
-        if not self._available:
-            return "Flownex API not available (pythonnet / installation missing)."
-        if not os.path.isfile(project_path):
-            return f"Project file not found: {project_path}"
-
-        if self._project is not None and getattr(self, "_project_path", None) == project_path:
-            return "Already connected."
-
-        self.detach()
-        try:
-            import IPS  # type: ignore
-            fnx_dir = _get_flownex_directory()
-            IPS.Core.FlownexSEDotNet.InitialiseAssemblyResolver(fnx_dir)
-            root_path = project_path[: -len(".proj")] + "_project\\"
-            running = IPS.Core.FlownexSEDotNet.GetRunningFlownexInstances()
-            if running:
-                for inst in running:
-                    if inst.Project is not None and os.path.normpath(
-                        inst.Project.ProjectRootPath
-                    ) == os.path.normpath(root_path):
-                        self._project = inst.Project
-                        self._flownex_se = inst
-                        break
-            if self._project is None:
-                self._flownex_se = IPS.Core.FlownexSEDotNet.LaunchFlownexSE()
-                self._flownex_se.OpenProject(project_path, "", "")
-                self._project = self._flownex_se.Project
-
-            if self._project is None:
-                return f"Failed to open project: {project_path}"
-
-            self._sim_controller = IPS.Core.SimulationControlHelper(
-                self._project.SimulationControlHelper
-            )
-            self._net_builder = IPS.Core.NetworkBuilder(self._project.Builder)
-            self._project_path = project_path
-            return "Connected."
-        except Exception as exc:
-            return f"Error attaching to project: {exc}"
-
-    def detach(self):
-        try:
-            if self._flownex_se is not None:
-                self._flownex_se.CloseProject()
-        except Exception:
-            pass
-        self._project = None
-        self._flownex_se = None
-        self._sim_controller = None
-        self._net_builder = None
-        self._prop_cache.clear()
-
-    def _get_property(self, component: str, prop: str):
-        key = f"{component}.{prop}"
-        if key in self._prop_cache:
-            return self._prop_cache[key]
-        import IPS  # type: ignore
-        el = IPS.Core.Element(self._project.GetElement(component))
-        if el is None:
-            return None
-        p = IPS.Core.Property(el.GetPropertyFromFullDisplayName(prop))
-        if p is None:
-            return None
-        self._prop_cache[key] = p
-        return p
-
-    def set_value(self, component: str, prop: str, value: str, unit: str = "") -> bool:
-        if not self.connected:
-            return False
-        try:
-            p = self._get_property(component, prop)
-            if p is None:
-                return False
-            text = f"{value} {unit}".strip() if unit else str(value)
-            p.SetValueFromString(text)
-            return True
-        except Exception as exc:
-            print(f"[web_app] set_value error: {exc}")
-            return False
-
-    def get_value(self, component: str, prop: str, unit: str = "") -> Optional[float]:
-        if not self.connected:
-            return None
-        try:
-            from .fnx_units import UnitGroup  # relative within package if possible
-        except ImportError:
-            # Standalone: we'll do a simple numeric parse without unit conversion
-            UnitGroup = None
-
-        try:
-            p = self._get_property(component, prop)
-            if p is None:
-                return None
-            raw = p.GetValueAsString()
-            if raw is None:
-                return None
-            parts = raw.split()
-            numeric = float(parts[0])
-
-            if unit and UnitGroup and len(parts) >= 3:
-                ug = UnitGroup.GetUnitGroupFromIdentifierName(parts[1])
-                if ug:
-                    api_unit = ug.UnitFromName(" ".join(parts[2:]))
-                    user_unit = ug.UnitFromName(unit)
-                    if api_unit and user_unit:
-                        numeric = UnitGroup.Convert(numeric, api_unit, user_unit)
-            return numeric
-        except Exception as exc:
-            print(f"[web_app] get_value error: {exc}")
-            return None
-
-    def run_steady_state(self, timeout_ms: int = 120_000) -> bool:
-        if not self.connected:
-            return False
-        try:
-            return bool(
-                self._sim_controller.SolveSteadyStateAndWaitToComplete(timeout_ms)
-            )
-        except Exception as exc:
-            print(f"[web_app] run_steady_state error: {exc}")
-            return False
-
-    def start_transient(self) -> bool:
-        if not self.connected:
-            return False
-        try:
-            self._project.ResetTime()
-            self._project.RunSimulation()
-            return True
-        except Exception as exc:
-            print(f"[web_app] start_transient error: {exc}")
-            return False
-
-    def stop_transient(self) -> bool:
-        if not self.connected:
-            return False
-        try:
-            self._project.DeactivateSimulation()
-            return True
-        except Exception as exc:
-            print(f"[web_app] stop_transient error: {exc}")
-            return False
-
-
-# ---------------------------------------------------------------------------
-# Server-side simulation state
+# Simulation state
 # ---------------------------------------------------------------------------
 
 class _SimState:
-    """Holds mutable simulation state shared between Flask handlers and the
-    background polling thread."""
+    """
+    Mutable simulation state shared between Flask handlers and the background
+    polling thread.
+
+    Thread-safety
+    -------------
+    ``output_values``, ``history``, and ``log`` are mutated from both the
+    Flask handler thread and the polling thread; all three writes are guarded
+    by ``_lock``.
+    """
 
     def __init__(self):
-        self.api = _FlownexAPI()
-        self.output_values: Dict[str, Any] = {}
-        self.history: List[Dict[str, Any]] = []
-        self._transient_running = False
-        self._timer: Optional[threading.Timer] = None
-        self._lock = threading.Lock()
-        self.log: List[str] = []
+        self.api: FNXApi        = FNXApi()
+        self.io:  FlownexIO     = FlownexIO()
 
-    # -- helpers --
+        self.output_values: Dict[str, Any]       = {}
+        self.history:       List[Dict[str, Any]] = []
+        self._transient_running                  = False
+        self._timer:        Optional[threading.Timer] = None
+        self._lock                               = threading.Lock()
+        self.log:           List[str]            = []
+
+        # Visualization settings read by extension.py to colour USD prims.
+        self.viz_settings: Dict[str, Any] = {
+            "property_index": 0,
+            "colormap_index": 0,
+            "manual_min":     None,
+            "manual_max":     None,
+        }
+
+        # Called after every output fetch; set by extension.py.
+        # Signature: on_outputs_ready(output_values: dict, fnx_outputs: list)
+        self.on_outputs_ready: Optional[Callable] = None
+
+        # Omniverse asyncio event loop; set by extension.py so Flask handlers
+        # can schedule USD-mutating operations on the main thread.
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
 
     def _log(self, msg: str):
-        ts = time.strftime("%H:%M:%S")
+        ts    = time.strftime("%H:%M:%S")
         entry = f"[{ts}] {msg}"
         print(entry)
         with self._lock:
             self.log.append(entry)
-            if len(self.log) > 200:
-                self.log = self.log[-200:]
+            if len(self.log) > _MAX_LOG_ENTRIES:
+                self.log = self.log[-_MAX_LOG_ENTRIES:]
 
     def get_log(self) -> List[str]:
         with self._lock:
             return list(self.log)
 
-    # -- output fetching --
+    # ------------------------------------------------------------------
+    # Omniverse-thread runner
+    # ------------------------------------------------------------------
 
-    def fetch_outputs(self):
-        outputs = _load_outputs()
-        point: Dict[str, Any] = {}
-        for out in outputs:
-            val = self.api.get_value(
-                out["componentIdentifier"],
-                out["propertyIdentifier"],
-                out["unit"],
+    def run_on_omni(self, fn: Callable, timeout: float = 30.0) -> Any:
+        """
+        Schedule *fn* to run on the Omniverse main thread and block until it
+        completes (or *timeout* seconds pass).  Returns the function's return
+        value, or raises on error / timeout.
+
+        Required for any USD-mutating operations (deinstance, mapping, viz).
+        """
+        if self._event_loop is None:
+            raise RuntimeError(
+                "Omniverse event loop not registered on web_app._state._event_loop. "
+                "Ensure extension.py sets _state._event_loop before calling "
+                "run_on_omni()."
             )
+
+        fut: concurrent.futures.Future = concurrent.futures.Future()
+
+        async def _wrapper():
+            import omni.kit.app  # type: ignore
+            await omni.kit.app.get_app().next_update_async()
+            try:
+                fut.set_result(fn())
+            except Exception as exc:
+                fut.set_exception(exc)
+
+        self._event_loop.call_soon_threadsafe(
+            lambda: asyncio.ensure_future(_wrapper())
+        )
+        return fut.result(timeout=timeout)
+
+    # ------------------------------------------------------------------
+    # Connection helpers
+    # ------------------------------------------------------------------
+
+    def ensure_connected(self) -> str:
+        project = self.io.Setup.FlownexProject
+        if not project:
+            return "No Flownex project configured."
+        ok = self.api.LaunchFlownexIfNeeded(project)
+        return "Connected." if ok else "Failed to connect to Flownex."
+
+    # ------------------------------------------------------------------
+    # Output fetching
+    # ------------------------------------------------------------------
+
+    def _fetch_outputs(self) -> List[OutputDefinition]:
+        """Pull all output values from Flownex and update history."""
+        fnx_outputs = self.io.LoadOutputs() or []
+        point: Dict[str, Any] = {}
+
+        for out in fnx_outputs:
+            val: Optional[Any] = None
+            if out.Unit:
+                val = self.api.GetPropertyValueUnit(
+                    out.ComponentIdentifier, out.PropertyIdentifier, out.Unit
+                )
+            else:
+                raw = self.api.GetPropertyValue(
+                    out.ComponentIdentifier, out.PropertyIdentifier
+                )
+                if raw is not None:
+                    try:
+                        val = float(raw)
+                    except (ValueError, TypeError):
+                        val = raw
+
             if val is not None:
-                self.output_values[out["key"]] = val
-                point[out["key"]] = val
+                self.output_values[out.Key] = val
+                point[out.Key] = val
 
         if point:
-            cfg = _read_config()
-            interval = float(cfg.get("ResultPollingInterval", 1.0))
-            last_t = (
-                self.history[-1].get("Time", -interval)
-                if self.history
-                else -interval
-            )
-            point["Time"] = last_t + interval
+            interval = float(self.io.Setup.ResultPollingInterval)
             with self._lock:
+                last_t = (
+                    self.history[-1].get("Time", -interval)
+                    if self.history
+                    else -interval
+                )
+                point["Time"] = last_t + interval
                 self.history.append(point)
-                if len(self.history) > 300:
-                    self.history = self.history[-300:]
+                if len(self.history) > _MAX_HISTORY_SIZE:
+                    self.history = self.history[-_MAX_HISTORY_SIZE:]
 
-    # -- transient loop --
+        return fnx_outputs
+
+    def _notify_outputs_ready(self, fnx_outputs: list):
+        if self.on_outputs_ready is not None:
+            try:
+                self.on_outputs_ready(dict(self.output_values), fnx_outputs)
+            except Exception as exc:
+                print(f"[web_app] on_outputs_ready callback error: {exc}")
+
+    # ------------------------------------------------------------------
+    # Transient simulation
+    # ------------------------------------------------------------------
 
     def _transient_step(self):
         if not self._transient_running:
             return
         try:
-            self.fetch_outputs()
+            fnx_outputs = self._fetch_outputs()
+            self._notify_outputs_ready(fnx_outputs)
         except Exception as exc:
             self._log(f"Polling error: {exc}")
 
-        cfg = _read_config()
-        interval = float(cfg.get("ResultPollingInterval", 1.0))
         if self._transient_running:
+            interval = float(self.io.Setup.ResultPollingInterval)
             self._timer = threading.Timer(interval, self._transient_step)
             self._timer.daemon = True
             self._timer.start()
-
-    def ensure_connected(self) -> str:
-        cfg = _read_config()
-        project = cfg.get("FlownexProject", "")
-        if not project:
-            return "No Flownex project configured."
-        return self.api.attach(project)
 
     def start_transient(self) -> Dict[str, Any]:
         if self._transient_running:
             return {"ok": False, "message": "Transient simulation already running."}
 
+        self.io = FlownexIO()
         msg = self.ensure_connected()
-        if not self.api.connected:
+        if self.api.AttachedProject is None:
             return {"ok": False, "message": msg}
 
-        # Apply current input defaults before starting
-        self._apply_defaults()
+        fnx_outputs = self.io.LoadOutputs() or []
+        if not fnx_outputs:
+            return {"ok": False, "message": "No output definitions found in Outputs.csv."}
 
-        if not self.api.start_transient():
+        if not self.api.StartTransientSimulation():
             return {"ok": False, "message": "Failed to start transient simulation."}
 
         self._transient_running = True
@@ -474,61 +246,95 @@ class _SimState:
         if self._timer:
             self._timer.cancel()
             self._timer = None
-        self.api.stop_transient()
+        self.api.StopTransientSimulation()
         self._log("Transient simulation stopped.")
         return {"ok": True, "message": "Transient simulation stopped."}
 
+    # ------------------------------------------------------------------
+    # Steady-state simulation
+    # ------------------------------------------------------------------
+
     def run_steady_state(self, load_defaults: bool = False) -> Dict[str, Any]:
+        self.io = FlownexIO()
         msg = self.ensure_connected()
-        if not self.api.connected:
+        if self.api.AttachedProject is None:
             return {"ok": False, "message": msg}
 
         if load_defaults:
             self._apply_defaults()
-            self._log("Loaded defaults.")
+            self._log("Input defaults applied.")
 
         self._log("Running steady-state simulation…")
-        success = self.api.run_steady_state()
+        success = self.api.RunSteadyStateSimulationBlocking()
         if success:
-            self.fetch_outputs()
-            self._log("Steady-state complete.")
-            return {"ok": True, "message": "Steady-state simulation complete.", "outputs": dict(self.output_values)}
-        else:
-            self._log("Steady-state simulation failed.")
-            return {"ok": False, "message": "Steady-state simulation failed."}
+            fnx_outputs = self._fetch_outputs()
+            self._notify_outputs_ready(fnx_outputs)
+            self._log("Steady-state simulation complete.")
+            return {
+                "ok":      True,
+                "message": "Steady-state simulation complete.",
+                "outputs": dict(self.output_values),
+            }
+
+        self._log("Steady-state simulation failed.")
+        return {"ok": False, "message": "Steady-state simulation failed."}
 
     def _apply_defaults(self):
-        """Push all default values from Inputs.csv and StaticInputs.csv into Flownex."""
-        for kind in ("dynamic", "static"):
-            for inp in _load_inputs(kind):
-                val = inp["defaultValue"]
-                self.api.set_value(
-                    inp["componentIdentifier"],
-                    inp["propertyIdentifier"],
-                    str(val),
-                    inp["unit"],
+        all_inputs: List[InputDefinition] = []
+        for kind in (self.io.LoadDynamicInputs(), self.io.LoadStaticInputs()):
+            if kind:
+                all_inputs.extend(kind)
+
+        for inp in all_inputs:
+            if inp.Unit:
+                self.api.SetPropertyValueUnit(
+                    inp.ComponentIdentifier,
+                    inp.PropertyIdentifier,
+                    float(inp.DefaultValue),
+                    inp.Unit,
+                )
+            else:
+                self.api.SetPropertyValue(
+                    inp.ComponentIdentifier,
+                    inp.PropertyIdentifier,
+                    str(inp.DefaultValue),
                 )
 
+    # ------------------------------------------------------------------
+    # Individual input update
+    # ------------------------------------------------------------------
+
     def set_input_value(self, key: str, value: Any) -> Dict[str, Any]:
-        """Set a single input by key and push to Flownex."""
-        for kind in ("dynamic", "static"):
-            for inp in _load_inputs(kind):
-                if inp["key"] == key:
-                    msg = self.ensure_connected()
-                    if not self.api.connected:
-                        return {"ok": False, "message": msg}
-                    ok = self.api.set_value(
-                        inp["componentIdentifier"],
-                        inp["propertyIdentifier"],
-                        str(value),
-                        inp["unit"],
-                    )
-                    if ok:
-                        cfg = _read_config()
-                        if cfg.get("SolveOnChange"):
-                            return self.run_steady_state()
-                        return {"ok": True, "message": f"Set {key} = {value}"}
-                    return {"ok": False, "message": f"Failed to set {key}."}
+        all_inputs: List[InputDefinition] = []
+        for kind in (self.io.LoadDynamicInputs(), self.io.LoadStaticInputs()):
+            if kind:
+                all_inputs.extend(kind)
+
+        for inp in all_inputs:
+            if inp.Key != key:
+                continue
+            msg = self.ensure_connected()
+            if self.api.AttachedProject is None:
+                return {"ok": False, "message": msg}
+
+            if inp.Unit:
+                self.api.SetPropertyValueUnit(
+                    inp.ComponentIdentifier,
+                    inp.PropertyIdentifier,
+                    float(value),
+                    inp.Unit,
+                )
+            else:
+                self.api.SetPropertyValue(
+                    inp.ComponentIdentifier,
+                    inp.PropertyIdentifier,
+                    str(value),
+                )
+
+            if self.io.Setup.SolveOnChange:
+                return self.run_steady_state(load_defaults=False)
+            return {"ok": True, "message": f"Set {key} = {value}"}
+
         return {"ok": False, "message": f"Input key '{key}' not found."}
 
     @property
@@ -536,8 +342,50 @@ class _SimState:
         return self._transient_running
 
 
-# Module-level singleton
+# Module-level singleton created once on import
 _state = _SimState()
+
+
+# ---------------------------------------------------------------------------
+# JSON serialisation helpers
+# ---------------------------------------------------------------------------
+
+def _inputs_to_json(inputs) -> List[Dict[str, Any]]:
+    if not inputs:
+        return []
+    return [
+        {
+            "key":                  i.Key,
+            "description":          i.Description,
+            "componentIdentifier":  i.ComponentIdentifier,
+            "propertyIdentifier":   i.PropertyIdentifier,
+            "editType":             i.EditType,
+            "min":                  i.Min,
+            "max":                  i.Max,
+            "step":                 i.Step,
+            "unit":                 i.Unit or "",
+            "defaultValue":         i.DefaultValue,
+        }
+        for i in inputs
+    ]
+
+
+def _outputs_to_json(outputs) -> List[Dict[str, Any]]:
+    if not outputs:
+        return []
+    return [
+        {
+            "category":            o.Category,
+            "key":                 o.Key,
+            "description":         o.Description,
+            "componentIdentifier": o.ComponentIdentifier,
+            "propertyIdentifier":  o.PropertyIdentifier,
+            "unit":                o.Unit or "",
+            "currentValue":        _state.output_values.get(o.Key),
+        }
+        for o in outputs
+    ]
+
 
 # ---------------------------------------------------------------------------
 # Flask application
@@ -546,81 +394,100 @@ _state = _SimState()
 app = Flask(__name__, static_folder=str(_WEB_UI_DIR), static_url_path="/ui")
 
 
-# -- frontend --
+# -- frontend ---------------------------------------------------------------
 
 @app.route("/")
 def index():
     return send_from_directory(str(_WEB_UI_DIR), "index.html")
 
 
-# -- config --
+# -- config -----------------------------------------------------------------
 
 @app.route("/api/config", methods=["GET"])
 def get_config():
-    return jsonify(_read_config())
+    s = _state.io.Setup
+    return jsonify({
+        "FlownexProject":      s.FlownexProject,
+        "IOFileDirectory":     s.IOFileDirectory,
+        "SolveOnChange":       s.SolveOnChange,
+        "ResultPollingInterval": s.ResultPollingInterval,
+    })
 
 
 @app.route("/api/config", methods=["POST"])
 def set_config():
-    cfg = _read_config()
     data = request.get_json(force=True) or {}
-    for key in ("FlownexProject", "IOFileDirectory", "SolveOnChange", "ResultPollingInterval"):
-        if key in data:
-            cfg[key] = data[key]
-    _write_config(cfg)
-    return jsonify({"ok": True, "config": cfg})
+    s = _state.io.Setup
+    if "FlownexProject"       in data: s.FlownexProject       = data["FlownexProject"]
+    if "IOFileDirectory"      in data: s.IOFileDirectory      = data["IOFileDirectory"]
+    if "SolveOnChange"        in data: s.SolveOnChange        = bool(data["SolveOnChange"])
+    if "ResultPollingInterval" in data: s.ResultPollingInterval = str(data["ResultPollingInterval"])
+    _state.io.Save()
+    _state.io = FlownexIO()  # reload from disk
+    return jsonify({"ok": True})
 
 
-# -- inputs --
+# -- inputs -----------------------------------------------------------------
 
 @app.route("/api/inputs", methods=["GET"])
 def get_dynamic_inputs():
-    return jsonify(_load_inputs("dynamic"))
+    return jsonify(_inputs_to_json(_state.io.LoadDynamicInputs()))
 
 
 @app.route("/api/static-inputs", methods=["GET"])
 def get_static_inputs():
-    return jsonify(_load_inputs("static"))
+    return jsonify(_inputs_to_json(_state.io.LoadStaticInputs()))
 
 
 @app.route("/api/inputs/values", methods=["POST"])
 def set_input_values():
-    """
-    Body: { "values": { "<key>": <value>, ... } }
-    """
+    """Body: { "values": { "<key>": <value>, … } }"""
     data = request.get_json(force=True) or {}
-    results = {}
-    for key, value in (data.get("values") or {}).items():
-        results[key] = _state.set_input_value(key, value)
+    results = {
+        key: _state.set_input_value(key, value)
+        for key, value in (data.get("values") or {}).items()
+    }
     return jsonify({"ok": True, "results": results})
 
 
-# -- outputs --
+# -- outputs ----------------------------------------------------------------
 
 @app.route("/api/outputs", methods=["GET"])
 def get_outputs():
-    defs = _load_outputs()
-    merged = []
-    for out in defs:
-        merged.append(
-            {**out, "currentValue": _state.output_values.get(out["key"])}
-        )
-    return jsonify(merged)
+    return jsonify(_outputs_to_json(_state.io.LoadOutputs()))
 
 
-# -- simulation --
+# -- visualization settings -------------------------------------------------
+
+@app.route("/api/viz/settings", methods=["GET"])
+def get_viz_settings():
+    return jsonify({
+        "settings":       _state.viz_settings,
+        "propertyOptions": get_visualizable_properties(),
+        "colormapOptions": COLOR_MAP_OPTIONS,
+    })
+
+
+@app.route("/api/viz/settings", methods=["POST"])
+def set_viz_settings():
+    data = request.get_json(force=True) or {}
+    for key in ("property_index", "colormap_index", "manual_min", "manual_max"):
+        if key in data:
+            _state.viz_settings[key] = data[key]
+    return jsonify({"ok": True, "settings": _state.viz_settings})
+
+
+# -- simulation control -----------------------------------------------------
 
 @app.route("/api/simulation/status", methods=["GET"])
 def sim_status():
-    return jsonify(
-        {
-            "transientRunning": _state.transient_running,
-            "flownexAvailable": _state.api.available,
-            "connected": _state.api.connected,
-            "outputs": dict(_state.output_values),
-            "log": _state.get_log()[-50:],
-        }
-    )
+    return jsonify({
+        "transientRunning":  _state.transient_running,
+        "flownexAvailable":  _state.api.IsFnxAvailable(),
+        "connected":         _state.api.AttachedProject is not None,
+        "outputs":           dict(_state.output_values),
+        "log":               _state.get_log()[-50:],
+    })
 
 
 @app.route("/api/simulation/start-transient", methods=["POST"])
@@ -649,25 +516,66 @@ def get_history():
         return jsonify(list(_state.history))
 
 
+# -- results mapping (USD operations – run on Omniverse main thread) --------
+
+@app.route("/api/mapping/add-attribute", methods=["POST"])
+def mapping_add_attribute():
+    """
+    Add the ``flownex:componentName`` attribute to all prims under *root*.
+    Body (optional): { "root": "/World" }
+    """
+    data = request.get_json(force=True) or {}
+    root = data.get("root", "/World")
+
+    from .flownex_attr_tools import deinstance_and_add_flownex
+
+    try:
+        result = _state.run_on_omni(lambda: deinstance_and_add_flownex(root))
+        return jsonify({"ok": True, "message": result})
+    except Exception as exc:
+        return jsonify({"ok": False, "message": str(exc)})
+
+
+@app.route("/api/mapping/generate", methods=["POST"])
+def mapping_generate():
+    """Generate FlownexMapping.json from the current stage + Outputs.csv."""
+    from .flownex_attr_tools import map_outputs_to_prims
+
+    io_dir = _state.io.Setup.IOFileDirectory
+    try:
+        result, _ = _state.run_on_omni(
+            lambda: map_outputs_to_prims(io_dir, outputs_filename="Outputs.csv")
+        )
+        return jsonify({"ok": True, "message": result})
+    except Exception as exc:
+        return jsonify({"ok": False, "message": str(exc)})
+
+
 # ---------------------------------------------------------------------------
-# Entry point
+# Server lifecycle
 # ---------------------------------------------------------------------------
 
-def main():
-    parser = argparse.ArgumentParser(description="Flownex Web Interface")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=5000, help="Bind port (default: 5000)")
-    parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode")
-    args = parser.parse_args()
-
-    print("=" * 60)
-    print("  Flownex Web Interface")
-    print(f"  URL : http://{args.host}:{args.port}")
-    print(f"  Flownex API available : {_state.api.available}")
-    print("=" * 60)
-
-    app.run(host=args.host, port=args.port, debug=args.debug, use_reloader=False)
+_server_thread: Optional[threading.Thread] = None
 
 
-if __name__ == "__main__":
-    main()
+def start_server(host: str = "0.0.0.0", port: int = 5000):
+    """Launch Flask in a daemon thread.  Safe to call multiple times."""
+    global _server_thread
+    if _server_thread and _server_thread.is_alive():
+        print("[web_app] Server already running.")
+        return
+
+    def _run():
+        print(f"[web_app] Starting web server → http://{host}:{port}")
+        app.run(host=host, port=port, debug=False, use_reloader=False)
+
+    _server_thread = threading.Thread(target=_run, name="flownex-web", daemon=True)
+    _server_thread.start()
+
+
+def stop_server():
+    """Stop the transient loop.  Flask daemon thread exits with the process."""
+    global _server_thread
+    _state.stop_transient()
+    _state.on_outputs_ready = None
+    _server_thread = None
