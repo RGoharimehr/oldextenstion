@@ -163,7 +163,9 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
 
             mat = UsdShade.Material(stage.GetPrimAtPath(mat_path))
 
-            geo_prims = _collect_geometry_prims(prim) or [prim]
+            geo_prims = _collect_geometry_prims(prim)
+            if not geo_prims:
+                print(f"[viz] No geometry prims found under {prim.GetPath()}; skipping.")
             for geo_prim in geo_prims:
                 try:
                     # No binding-strength argument → fallbackStrength is used,
@@ -214,7 +216,9 @@ def _apply_fallback_material_to_prim(stage: Usd.Stage, prim: Usd.Prim) -> int:
 
     try:
         mat = UsdShade.Material(fallback_mat_prim)
-        geo_prims = _collect_geometry_prims(prim) or [prim]
+        geo_prims = _collect_geometry_prims(prim)
+        if not geo_prims:
+            print(f"[viz] No geometry prims found under {prim.GetPath()}; skipping fallback bind.")
         for geo_prim in geo_prims:
             try:
                 UsdShade.MaterialBindingAPI.Apply(geo_prim).Bind(mat)
