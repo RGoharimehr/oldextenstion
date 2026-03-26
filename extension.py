@@ -101,6 +101,9 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         # every simulation output fetch.
         web_app._state.on_outputs_ready = self._on_outputs_ready
 
+        # Mark the extension as alive so Flask endpoints accept requests.
+        web_app._state.extension_alive = True
+
         # Launch the Flask server in a background daemon thread.
         web_app.start_server(_DEFAULT_HOST, _DEFAULT_PORT)
 
@@ -175,6 +178,13 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
     # ------------------------------------------------------------------
 
     def on_shutdown(self):
+        # Mark the extension as inactive before stopping the server so that
+        # any in-flight or queued Flask requests fail cleanly with 503 instead
+        # of executing against half-torn-down state.
+        web_app._state.extension_alive = False
+        web_app._state.on_outputs_ready = None
+        web_app._state._event_loop = None
+
         web_app.stop_server()
 
         if self._last_colored_prims:

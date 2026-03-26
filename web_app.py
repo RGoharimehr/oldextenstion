@@ -93,6 +93,13 @@ class _SimState:
         # can schedule USD-mutating operations on the main thread.
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
 
+        # Set True by extension.py on_startup and False on on_shutdown.
+        # Starts as False so endpoints return 503 until the extension is fully
+        # initialised. Flask endpoints check this flag and return 503 when it
+        # is False so that browser tabs fail cleanly instead of interacting
+        # with stale or uninitialised state.
+        self.extension_alive: bool = False
+
     # ------------------------------------------------------------------
     # Input default values helper
     # ------------------------------------------------------------------
@@ -415,7 +422,24 @@ def _outputs_to_json(outputs) -> List[Dict[str, Any]]:
 app = Flask(__name__, static_folder=str(_WEB_UI_DIR), static_url_path="/ui")
 
 
-# -- frontend ---------------------------------------------------------------
+# -- extension-alive guard ---------------------------------------------------
+
+@app.before_request
+def _reject_when_extension_is_off():
+    """Return 503 immediately if the Omniverse extension is not active.
+
+    This prevents browser tabs that are still open from interacting with stale
+    state after the extension has been disabled or is mid-shutdown.
+    The static UI files (index.html, JS, CSS) are exempt so the browser can
+    still load the page and display a meaningful 'extension offline' message.
+    """
+    if request.endpoint in ("index", "static") or request.path.startswith("/ui"):
+        return None
+    if not _state.extension_alive:
+        return jsonify({"ok": False, "message": "Extension is not active."}), 503
+
+
+
 
 @app.route("/")
 def index():
@@ -587,9 +611,23 @@ def start_server(host: str = "0.0.0.0", port: int = 5000):
     Launch the Flask WSGI server using werkzeug's ``make_server`` so that
     ``stop_server()`` can call ``server.shutdown()`` and actually stop
     accepting connections when the extension is disabled.
+
+    Defensive: if a previous ``_flask_server`` instance was left behind (e.g.
+    the extension was disabled before the thread exited), it is shut down
+    before the new server is started.
     """
     global _server_thread, _flask_server
-    if _server_thread and _server_thread.is_alive():
+
+    # Defensive cleanup in case an old instance was not fully stopped.
+    if _flask_server is not None:
+        try:
+            _flask_server.shutdown()
+            _flask_server.server_close()
+        except Exception:
+            pass
+        _flask_server = None
+
+    if _server_thread is not None and _server_thread.is_alive():
         print("[web_app] Server already running.")
         return
 
@@ -604,7 +642,10 @@ def start_server(host: str = "0.0.0.0", port: int = 5000):
 
     def _run():
         print(f"[web_app] Starting web server → http://{host}:{port}")
-        srv.serve_forever()
+        try:
+            srv.serve_forever()
+        finally:
+            print("[web_app] Web server thread exited.")
 
     _server_thread = threading.Thread(target=_run, name="flownex-web", daemon=True)
     _server_thread.start()
@@ -612,13 +653,65 @@ def start_server(host: str = "0.0.0.0", port: int = 5000):
 
 def stop_server():
     """
-    Stop the transient polling loop and shut down the HTTP server so that
-    the web UI becomes unreachable immediately after the extension is disabled.
+    Stop polling, detach callbacks, shut down Flask, wait for the thread
+    to exit, and clear all state that should not survive extension shutdown.
     """
     global _server_thread, _flask_server
-    _state.stop_transient()
+
+    # Stop simulation polling first.
+    try:
+        _state.stop_transient()
+    except Exception as exc:
+        print(f"[web_app] stop_transient error during shutdown: {exc}")
+
+    # Prevent any future callback into extension.py.
     _state.on_outputs_ready = None
-    if _flask_server is not None:
-        _flask_server.shutdown()
-        _flask_server = None
+    _state._event_loop = None
+
+    # Best-effort close of Flownex-side activity.
+    try:
+        if getattr(_state.api, "AttachedProject", None) is not None:
+            try:
+                _state.api.StopTransientSimulation()
+            except Exception:
+                pass
+            try:
+                _state.api.CloseProject()
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[web_app] Flownex cleanup error during shutdown: {exc}")
+
+    # Shut down HTTP server.
+    srv = _flask_server
+    th  = _server_thread
+
+    _flask_server  = None
     _server_thread = None
+
+    if srv is not None:
+        try:
+            srv.shutdown()
+            try:
+                srv.server_close()
+            except Exception:
+                pass
+        except Exception as exc:
+            print(f"[web_app] server shutdown error: {exc}")
+
+    # Wait briefly for the background server thread to fully exit so that
+    # the port is released before the extension is re-enabled.
+    if th is not None and th.is_alive():
+        th.join(timeout=2.0)
+        if th.is_alive():
+            print("[web_app] Warning: server thread did not exit cleanly.")
+
+    # Clear stale in-memory state so that the next start_server() begins clean.
+    with _state._lock:
+        _state.output_values.clear()
+        _state.history.clear()
+        _state.log.clear()
+
+    _state._transient_running = False
+    _state._timer = None
+
