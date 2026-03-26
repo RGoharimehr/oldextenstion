@@ -61,10 +61,29 @@ def get_visualizable_properties():
 # Path for the temporary material scope created inside the session layer.
 _VIZ_SCOPE_PATH = "/_VizMaterials"
 
+# Fallback material applied to prims when no output data is available.
+_FALLBACK_MATERIAL_PATH = "/World/Looks/Aluminum_Foil"
+
 # Tracks which prim paths have had a material-binding override written to the
 # session layer so that _reset_prim_colors can remove exactly those overrides
 # (and nothing else) without touching the rest of the session layer.
 _viz_session_overrides: Set[str] = set()
+
+
+def _get_xform_target(prim: Usd.Prim) -> Usd.Prim:
+    """
+    Returns the nearest Xform (or Scope) ancestor when the given prim is a
+    ``Mesh``, otherwise returns the prim itself.
+
+    Binding the material on an Xform with ``strongerThanDescendants`` is
+    preferred because a single override on the Xform covers all child geometry
+    prims without touching them individually.
+    """
+    if prim.GetTypeName() == "Mesh":
+        parent = prim.GetParent()
+        if parent.IsValid() and parent.GetPath() != Sdf.Path.absoluteRootPath:
+            return parent
+    return prim
 
 
 def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, float, float]) -> int:
@@ -90,6 +109,10 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
 
     if not prim or not prim.IsValid():
         return 0
+
+    # Prefer binding the Xform ancestor over a bare Mesh prim so that a single
+    # strongerThanDescendants override covers all child geometry automatically.
+    prim = _get_xform_target(prim)
 
     session_layer = stage.GetSessionLayer()
     if not session_layer:
@@ -146,6 +169,54 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
                 colored_count += 1
             except Exception as e:
                 print(f"[viz] Material bind failed on {prim.GetPath()}: {e}")
+    finally:
+        stage.SetEditTarget(old_target)
+
+    return colored_count
+
+
+def _apply_fallback_material_to_prim(stage: Usd.Stage, prim: Usd.Prim) -> int:
+    """
+    Binds the fallback material at ``_FALLBACK_MATERIAL_PATH``
+    (``/World/Looks/Aluminum_Foil``) to *prim* via the session layer using
+    ``strongerThanDescendants`` so that all child geometry is covered.
+
+    If the Aluminum_Foil material is not present in the stage, the function
+    falls back to applying a silver colour via ``_apply_color_to_prim``.
+
+    Returns 1 on success, 0 on failure.
+    """
+    global _viz_session_overrides
+
+    if not prim or not prim.IsValid():
+        return 0
+
+    # Prefer binding the Xform ancestor over a bare Mesh prim.
+    prim = _get_xform_target(prim)
+
+    fallback_mat_prim = stage.GetPrimAtPath(_FALLBACK_MATERIAL_PATH)
+    if not fallback_mat_prim or not fallback_mat_prim.IsValid():
+        # Fallback material not found in the stage – use silver instead.
+        print(f"[viz] Fallback material '{_FALLBACK_MATERIAL_PATH}' not found; using silver.")
+        return _apply_color_to_prim(stage, prim, (0.75, 0.75, 0.75))
+
+    session_layer = stage.GetSessionLayer()
+    if not session_layer:
+        return 0
+
+    old_target = stage.GetEditTarget()
+    stage.SetEditTarget(Usd.EditTarget(session_layer))
+    colored_count = 0
+
+    try:
+        mat = UsdShade.Material(fallback_mat_prim)
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+            mat, UsdShade.Tokens.strongerThanDescendants
+        )
+        _viz_session_overrides.add(prim.GetPath().pathString)
+        colored_count = 1
+    except Exception as e:
+        print(f"[viz] Fallback material bind failed on {prim.GetPath()}: {e}")
     finally:
         stage.SetEditTarget(old_target)
 
@@ -336,17 +407,15 @@ def visualize_property_layer(
     
     if not outputs_to_visualize:
         log_text += f"No output properties found containing '{selected_prop_name}'.\n"
-        log_text += "Setting all mapped prims to silver as a placeholder."
+        log_text += f"Binding fallback material '{_FALLBACK_MATERIAL_PATH}' to all mapped prims.\n"
         log_field.model.set_value(log_text)
-        
-        # --- FIX: Color all mapped prims silver ---
-        silver_color = (0.75, 0.75, 0.75)
+
         all_mapped_paths = {path for paths in comp_to_prim_map.values() for path in paths}
         for path_str in all_mapped_paths:
             prim = stage.GetPrimAtPath(path_str)
-            if _apply_color_to_prim(stage, prim, silver_color) > 0:
+            if _apply_fallback_material_to_prim(stage, prim) > 0:
                 newly_colored_prims.add(path_str)
-        
+
         return None, None, None, None, newly_colored_prims
 
     unit = outputs_to_visualize[0].Unit if outputs_to_visualize else ""
