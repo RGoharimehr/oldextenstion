@@ -6,7 +6,7 @@ from typing import Dict, Optional, Tuple, List, Set
 from .fnx_api import FNXApi
 from .fnx_io_definition import OutputDefinition
 import omni.usd
-from pxr import Usd, UsdGeom, Gf, Vt, Sdf, UsdLux
+from pxr import Usd, UsdGeom, Gf, Vt, Sdf, UsdLux, UsdShade
 
 
 # pxr is available in Omniverse for USD ops
@@ -55,67 +55,149 @@ def get_visualizable_properties():
         "Volume Flow Rate", "Mass Flux",
     ]
 
-# --- NEW HELPER FUNCTION to avoid repeated code ---
-def _apply_color_to_prim(prim: Usd.Prim, rgb: Tuple[float, float, float]) -> int:
-    """Applies a color to a single prim, handling both lights and geometry. Returns count of items colored."""
+# ---------------------------------------------------------------------------
+# Visualization session-layer state
+# ---------------------------------------------------------------------------
+# Path for the temporary material scope created inside the session layer.
+_VIZ_SCOPE_PATH = "/_VizMaterials"
+
+# Tracks which prim paths have had a material-binding override written to the
+# session layer so that _reset_prim_colors can remove exactly those overrides
+# (and nothing else) without touching the rest of the session layer.
+_viz_session_overrides: Set[str] = set()
+
+
+def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, float, float]) -> int:
+    """
+    Applies a visualization colour to *exactly* the given prim – no recursion
+    into child prims.  Only prims that come from FlownexMapping.json (i.e. those
+    with a valid, non-empty ``flownex:componentName``) should be passed here.
+
+    Implementation
+    --------------
+    * All edits go to the **session layer** (the strongest layer in the USD
+      layer stack), so they override any root-layer material bindings and are
+      never persisted to disk.
+    * A simple ``UsdPreviewSurface`` material is created in ``/_VizMaterials``
+      inside that session layer and bound to the prim with binding strength
+      ``strongerThanDescendants``.  This makes all child geometry (Meshes, etc.)
+      render with the viz colour without us having to touch those child prims.
+    * For light prims the ``inputs:color`` attribute is set instead.
+
+    Returns the number of prims that received a colour opinion (0 on failure).
+    """
+    global _viz_session_overrides
+
     if not prim or not prim.IsValid():
         return 0
 
+    session_layer = stage.GetSessionLayer()
+    if not session_layer:
+        return 0
+
+    old_target = stage.GetEditTarget()
+    stage.SetEditTarget(Usd.EditTarget(session_layer))
     colored_count = 0
 
-    # prim.HasAPI() is the correct way to check whether an applied API schema is
-    # present on a prim.  UsdLux.LightAPI(prim).__bool__() only checks prim.IsValid()
-    # (inherited from UsdAPISchemaBase) and is therefore *always* True for any valid
-    # prim – which would send every geometry prim through the light branch.
-    if prim.HasAPI(UsdLux.LightAPI):
-        try:
-            light_api = UsdLux.LightAPI(prim)
-            color_attr = light_api.CreateColorAttr()
-            color_attr.Set(Gf.Vec3f(*rgb))
-            colored_count += 1
-        except Exception as e:
-            print(f"[viz] Failed to set color on light {prim.GetPath()}: {e}")
-    else:
-        # If not a light, find and color all Gprims under it
-        def find_and_color_gprims(p: Usd.Prim):
-            nonlocal colored_count
-            if UsdGeom.Gprim(p):
-                try:
-                    gprim = UsdGeom.Gprim(p)
-                    color_attr = gprim.CreateDisplayColorAttr()
-                    color_attr.Set([Gf.Vec3f(*rgb)])
-                    colored_count += 1
-                except Exception as e:
-                    print(f"[viz] Failed to set displayColor on {p.GetPath()}: {e}")
-            for child in p.GetChildren():
-                find_and_color_gprims(child)
-        find_and_color_gprims(prim)
-    
+    try:
+        r, g, b = float(rgb[0]), float(rgb[1]), float(rgb[2])
+
+        if prim.HasAPI(UsdLux.LightAPI):
+            # Lights: override the colour attribute in the session layer.
+            try:
+                UsdLux.LightAPI(prim).CreateColorAttr().Set(Gf.Vec3f(r, g, b))
+                _viz_session_overrides.add(prim.GetPath().pathString)
+                colored_count += 1
+            except Exception as e:
+                print(f"[viz] Light colour override failed on {prim.GetPath()}: {e}")
+        else:
+            # Geometry / assemblies: bind a simple UsdPreviewSurface material.
+            # Re-use the same material for prims that share the same colour.
+            mat_key = f"r{int(r * 255):03d}g{int(g * 255):03d}b{int(b * 255):03d}"
+            mat_path = Sdf.Path(f"{_VIZ_SCOPE_PATH}/{mat_key}")
+
+            # Ensure the viz materials scope exists in the session layer.
+            UsdGeom.Scope.Define(stage, _VIZ_SCOPE_PATH)
+
+            # Create the material + shader if it doesn't exist yet.
+            if not stage.GetPrimAtPath(mat_path).IsValid():
+                mat = UsdShade.Material.Define(stage, mat_path)
+                shader = UsdShade.Shader.Define(stage, mat_path.AppendChild("Shader"))
+                shader.CreateIdAttr("UsdPreviewSurface")
+                shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
+                    Gf.Vec3f(r, g, b)
+                )
+                shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
+                shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+                mat.CreateSurfaceOutput().ConnectToSource(
+                    shader.ConnectableAPI(), "surface"
+                )
+
+            mat = UsdShade.Material(stage.GetPrimAtPath(mat_path))
+
+            # Bind to the exact mapped prim only.  strongerThanDescendants
+            # ensures child Meshes render with this colour even if they have
+            # their own material:binding opinions in weaker layers.
+            try:
+                UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+                    mat, UsdShade.Tokens.strongerThanDescendants
+                )
+                _viz_session_overrides.add(prim.GetPath().pathString)
+                colored_count += 1
+            except Exception as e:
+                print(f"[viz] Material bind failed on {prim.GetPath()}: {e}")
+    finally:
+        stage.SetEditTarget(old_target)
+
     return colored_count
 
 
 def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
-    """Blocks color attributes on a set of prims to reset them."""
-    if not stage or not prim_paths:
+    """
+    Undo all visualization colour overrides written to the session layer by
+    previous calls to ``_apply_color_to_prim``.
+
+    The *prim_paths* parameter is kept for API compatibility; the authoritative
+    set of paths to clean up is the module-level ``_viz_session_overrides``.
+    """
+    global _viz_session_overrides
+
+    if not stage:
         return
-    
-    with Sdf.ChangeBlock():
-        for path_str in prim_paths:
+
+    session_layer = stage.GetSessionLayer()
+    if not session_layer:
+        return
+
+    old_target = stage.GetEditTarget()
+    stage.SetEditTarget(Usd.EditTarget(session_layer))
+
+    try:
+        # Remove the material-binding relationship we authored for each prim.
+        for path_str in _viz_session_overrides:
             prim = stage.GetPrimAtPath(path_str)
             if not prim or not prim.IsValid():
                 continue
+            rel = UsdShade.MaterialBindingAPI(prim).GetDirectBindingRel()
+            if rel and rel.IsValid():
+                # ClearTargets(True) removes the relationship spec from the
+                # current edit target, restoring the weaker-layer binding.
+                rel.ClearTargets(True)
+            # For lights, clear the colour attribute override.
+            if prim.HasAPI(UsdLux.LightAPI):
+                color_attr = prim.GetAttribute("inputs:color")
+                if color_attr and color_attr.IsValid():
+                    color_attr.Clear()
 
-            if prim.HasAPI(UsdLux.LightAPI) and prim.HasAttribute("color"):
-                try: prim.GetAttribute("color").Block()
-                except Exception as e: print(f"[viz] Failed to block color on light {prim.GetPath()}: {e}")
-            else:
-                def find_and_block_gprim_color(p: Usd.Prim):
-                    if p.HasAttribute("displayColor"):
-                        try: p.GetAttribute("displayColor").Block()
-                        except Exception as e: print(f"[viz] Failed to block displayColor on {p.GetPath()}: {e}")
-                    for child in p.GetChildren():
-                        find_and_block_gprim_color(child)
-                find_and_block_gprim_color(prim)
+        # Remove the entire /_VizMaterials scope from the session layer so
+        # there are no leftover material prims.
+        viz_prim = stage.GetPrimAtPath(_VIZ_SCOPE_PATH)
+        if viz_prim and viz_prim.IsValid():
+            stage.RemovePrim(Sdf.Path(_VIZ_SCOPE_PATH))
+    finally:
+        stage.SetEditTarget(old_target)
+
+    _viz_session_overrides = set()
 
 
 def color_map(norm: float, cmap: str = "blue-white-red") -> Tuple[float, float, float]:
@@ -180,7 +262,7 @@ def _visualize_single_component(
     total_colored = 0
     for prim_path in prim_paths:
         prim = stage.GetPrimAtPath(prim_path)
-        colored_count = _apply_color_to_prim(prim, rgb)
+        colored_count = _apply_color_to_prim(stage, prim, rgb)
         if colored_count > 0:
             total_colored += colored_count
             info["colored_paths"].append(prim_path)
@@ -262,7 +344,7 @@ def visualize_property_layer(
         all_mapped_paths = {path for paths in comp_to_prim_map.values() for path in paths}
         for path_str in all_mapped_paths:
             prim = stage.GetPrimAtPath(path_str)
-            if _apply_color_to_prim(prim, silver_color) > 0:
+            if _apply_color_to_prim(stage, prim, silver_color) > 0:
                 newly_colored_prims.add(path_str)
         
         return None, None, None, None, newly_colored_prims
