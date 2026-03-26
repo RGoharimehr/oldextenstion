@@ -467,10 +467,24 @@ def visualize_property_layer(
         else:
             errors += 1
 
+    # Apply fallback material to prims that are in the mapping but have no
+    # result for the selected property (or whose value was missing/invalid).
+    all_mapped_paths = {path for paths in comp_to_prim_map.values() for path in paths}
+    no_data_paths = all_mapped_paths - newly_colored_prims
+    fallback_count = 0
+    if no_data_paths:
+        for path_str in no_data_paths:
+            prim = stage.GetPrimAtPath(path_str)
+            if _apply_fallback_material_to_prim(stage, prim) > 0:
+                newly_colored_prims.add(path_str)
+                fallback_count += 1
+
     log_text += f"\nVisualization complete.\n"
     log_text += f"  - Colored {processed} prims (geometry and lights).\n"
     log_text += f"  - Skipped {skipped} (not in mapping or no valid data).\n"
     log_text += f"  - Encountered {errors} errors during coloring.\n"
+    if fallback_count:
+        log_text += f"  - Applied '{_FALLBACK_MATERIAL_PATH}' to {fallback_count} prims with no data for '{selected_prop_name}'.\n"
     log_field.model.set_value(log_text)
 
     return vmin, vmax, selected_cmap, full_label, newly_colored_prims
