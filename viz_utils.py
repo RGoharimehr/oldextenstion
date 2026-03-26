@@ -61,34 +61,125 @@ def get_visualizable_properties():
 # Path for the temporary material scope created inside the session layer.
 _VIZ_SCOPE_PATH = "/_VizMaterials"
 
+# Fallback material applied to prims when no output data is available.
+_FALLBACK_MATERIAL_PATH = "/World/Looks/Aluminum_Foil"
+
+# Silver RGB colour used when the Aluminum_Foil material is absent.
+_FALLBACK_COLOR: Tuple[float, float, float] = (0.75, 0.75, 0.75)
+
 # Tracks which prim paths have had a material-binding override written to the
 # session layer so that _reset_prim_colors can remove exactly those overrides
 # (and nothing else) without touching the rest of the session layer.
 _viz_session_overrides: Set[str] = set()
 
 
+_GEO_TYPE_NAMES: frozenset = frozenset({
+    "Mesh", "BasisCurves", "Points", "NurbsPatch",
+    "Capsule", "Cone", "Cube", "Cylinder", "Sphere",
+})
+
+
+def _collect_geometry_prims(prim: Usd.Prim) -> List[Usd.Prim]:
+    """
+    Traverse *prim* and all its descendants and return every active, defined
+    geometry prim (Mesh, BasisCurves, etc.) found.
+
+    If *prim* is itself a geometry prim, returns ``[prim]`` without further
+    traversal.  This is used to find the actual renderable prims so that
+    material bindings can be written directly on them, without needing any
+    ``strongerThanDescendants`` / ``weakerThanDescendants`` override.
+    """
+    result: List[Usd.Prim] = []
+    for p in Usd.PrimRange(prim):
+        if not p.IsActive() or not p.IsDefined():
+            continue
+        if p.GetTypeName() in _GEO_TYPE_NAMES:
+            result.append(p)
+    return result
+
+
+def _find_mesh_prims_by_flownex_name(
+    stage: Usd.Stage, component_id: str, root: str = "/World"
+) -> List[Usd.Prim]:
+    """
+    Scan the stage for **Mesh** prims that carry a non-empty
+    ``flownex:componentName`` attribute whose value matches *component_id*.
+
+    Only prims of USD type ``"Mesh"`` are returned; Xforms and all other prim
+    types are intentionally skipped so that the visualization pipeline operates
+    purely on renderable geometry and never walks into parent/child subtrees.
+
+    Matching is case-insensitive with whitespace collapsed so that minor
+    formatting differences between the CSV identifier and the USD attribute
+    value are tolerated.
+
+    Parameters
+    ----------
+    stage        : the active USD stage.
+    component_id : Flownex ComponentIdentifier string to match.
+    root         : stage path to start traversal from (default ``"/World"``).
+
+    Returns
+    -------
+    List[Usd.Prim]
+        A (possibly empty) list of matching Mesh prims.
+    """
+    def _norm(s: str) -> str:
+        return "".join((s or "").split()).lower()
+
+    target = _norm(component_id)
+    result: List[Usd.Prim] = []
+
+    root_prim = stage.GetPrimAtPath(root)
+    traverse = (
+        Usd.PrimRange(root_prim)
+        if root_prim and root_prim.IsValid()
+        else stage.Traverse()
+    )
+    for prim in traverse:
+        if not prim.IsActive() or not prim.IsDefined() or prim.IsInstanceProxy():
+            continue
+        # Mesh-only: skip Xforms and every other non-Mesh prim type
+        if prim.GetTypeName() != "Mesh":
+            continue
+        attr = prim.GetAttribute("flownex:componentName")
+        if not attr or not attr.IsValid():
+            continue
+        val = attr.Get()
+        if val and _norm(str(val)) == target:
+            result.append(prim)
+    return result
+
+
 def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, float, float]) -> int:
     """
-    Applies a visualization colour to *exactly* the given prim – no recursion
-    into child prims.  Only prims that come from FlownexMapping.json (i.e. those
-    with a valid, non-empty ``flownex:componentName``) should be passed here.
+    Applies a visualization colour to *prim* via the session layer.
+
+    The pipeline is mesh-only: only prims whose USD type is ``"Mesh"`` are
+    colored.  No subtree traversal is performed — the binding is written
+    directly on the given prim.
 
     Implementation
     --------------
-    * All edits go to the **session layer** (the strongest layer in the USD
-      layer stack), so they override any root-layer material bindings and are
-      never persisted to disk.
-    * A simple ``UsdPreviewSurface`` material is created in ``/_VizMaterials``
-      inside that session layer and bound to the prim with binding strength
-      ``strongerThanDescendants``.  This makes all child geometry (Meshes, etc.)
-      render with the viz colour without us having to touch those child prims.
-    * For light prims the ``inputs:color`` attribute is set instead.
+    * All edits go to the **session layer** so they are never persisted to disk.
+    * ``primvars:displayColor`` is set directly on the Mesh prim so that the
+      colour is immediately visible in any USD viewer (including wireframe and
+      base-colour modes that do not resolve full material bindings).
+    * A ``UsdPreviewSurface`` material is also defined in the session layer's
+      ``/_VizMaterials`` scope and bound on the Mesh prim with
+      ``strongerThanDescendants`` for renderers that honour material bindings.
+    * Any previous direct-binding relationship is cleared before the new bind
+      is written to avoid stale relationship targets accumulating.
 
-    Returns the number of prims that received a colour opinion (0 on failure).
+    Returns 1 if the prim was colored, 0 otherwise.
     """
     global _viz_session_overrides
 
     if not prim or not prim.IsValid():
+        return 0
+
+    # Mesh-only: reject anything that is not a Mesh prim
+    if prim.GetTypeName() != "Mesh":
         return 0
 
     session_layer = stage.GetSessionLayer()
@@ -102,50 +193,114 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
     try:
         r, g, b = float(rgb[0]), float(rgb[1]), float(rgb[2])
 
-        if prim.HasAPI(UsdLux.LightAPI):
-            # Lights: override the colour attribute in the session layer.
-            try:
-                UsdLux.LightAPI(prim).CreateColorAttr().Set(Gf.Vec3f(r, g, b))
-                _viz_session_overrides.add(prim.GetPath().pathString)
-                colored_count += 1
-            except Exception as e:
-                print(f"[viz] Light colour override failed on {prim.GetPath()}: {e}")
-        else:
-            # Geometry / assemblies: bind a simple UsdPreviewSurface material.
-            # Re-use the same material for prims that share the same colour.
-            mat_key = f"r{int(r * 255):03d}g{int(g * 255):03d}b{int(b * 255):03d}"
-            mat_path = Sdf.Path(f"{_VIZ_SCOPE_PATH}/{mat_key}")
+        # --- Direct colour attribute -----------------------------------------
+        # primvars:displayColor is the standard USD per-prim base colour.
+        # Setting it in the session layer ensures the colour is visible in
+        # every viewport mode (shaded, wireframe, base-colour) regardless of
+        # whether the renderer resolves the full material binding below.
+        mesh = UsdGeom.Mesh(prim)
+        disp_color_attr = mesh.GetDisplayColorAttr()
+        if not disp_color_attr or not disp_color_attr.IsValid():
+            disp_color_attr = mesh.CreateDisplayColorAttr()
+        disp_color_attr.Set(Vt.Vec3fArray([Gf.Vec3f(r, g, b)]))
 
-            # Ensure the viz materials scope exists in the session layer.
-            UsdGeom.Scope.Define(stage, _VIZ_SCOPE_PATH)
+        # --- Material binding ------------------------------------------------
+        mat_key = f"r{int(r * 255):03d}g{int(g * 255):03d}b{int(b * 255):03d}"
+        mat_path = Sdf.Path(f"{_VIZ_SCOPE_PATH}/{mat_key}")
 
-            # Create the material + shader if it doesn't exist yet.
-            if not stage.GetPrimAtPath(mat_path).IsValid():
-                mat = UsdShade.Material.Define(stage, mat_path)
-                shader = UsdShade.Shader.Define(stage, mat_path.AppendChild("Shader"))
-                shader.CreateIdAttr("UsdPreviewSurface")
-                shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
-                    Gf.Vec3f(r, g, b)
-                )
-                shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
-                shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
-                mat.CreateSurfaceOutput().ConnectToSource(
-                    shader.ConnectableAPI(), "surface"
-                )
+        UsdGeom.Scope.Define(stage, _VIZ_SCOPE_PATH)
 
-            mat = UsdShade.Material(stage.GetPrimAtPath(mat_path))
+        if not stage.GetPrimAtPath(mat_path).IsValid():
+            mat = UsdShade.Material.Define(stage, mat_path)
+            shader = UsdShade.Shader.Define(stage, mat_path.AppendChild("Shader"))
+            shader.CreateIdAttr("UsdPreviewSurface")
+            shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
+                Gf.Vec3f(r, g, b)
+            )
+            shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
+            shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+            mat.CreateSurfaceOutput().ConnectToSource(
+                shader.ConnectableAPI(), "surface"
+            )
 
-            # Bind to the exact mapped prim only.  strongerThanDescendants
-            # ensures child Meshes render with this colour even if they have
-            # their own material:binding opinions in weaker layers.
-            try:
-                UsdShade.MaterialBindingAPI.Apply(prim).Bind(
-                    mat, UsdShade.Tokens.strongerThanDescendants
-                )
-                _viz_session_overrides.add(prim.GetPath().pathString)
-                colored_count += 1
-            except Exception as e:
-                print(f"[viz] Material bind failed on {prim.GetPath()}: {e}")
+        mat = UsdShade.Material(stage.GetPrimAtPath(mat_path))
+        binding_api = UsdShade.MaterialBindingAPI.Apply(prim)
+
+        # Clear previous direct-binding targets before writing the new binding.
+        # Without this, repeated Visualize calls accumulate multiple material
+        # references on the relationship, which can cause unexpected rendering
+        # results.  ClearTargets(True) removes the existing spec from the
+        # session layer so only the new material is referenced.
+        rel = binding_api.GetDirectBindingRel()
+        if rel and rel.IsValid():
+            rel.ClearTargets(True)
+
+        binding_api.Bind(mat, bindingStrength=UsdShade.Tokens.strongerThanDescendants)
+        _viz_session_overrides.add(prim.GetPath().pathString)
+        colored_count = 1
+
+    except Exception as e:
+        print(f"[viz] Material bind failed on {prim.GetPath()}: {e}")
+    finally:
+        stage.SetEditTarget(old_target)
+
+    return colored_count
+
+
+def _apply_fallback_material_to_prim(stage: Usd.Stage, prim: Usd.Prim) -> int:
+    """
+    Binds the fallback material at ``_FALLBACK_MATERIAL_PATH``
+    (``/World/Looks/Aluminum_Foil``) directly on *prim* via the session layer.
+
+    The pipeline is mesh-only: only prims whose USD type is ``"Mesh"`` are
+    bound.  No subtree traversal is performed.
+
+    The binding is written with ``strongerThanDescendants`` to guarantee
+    deterministic behaviour regardless of any other binding opinions already
+    present on the prim.
+
+    If the Aluminum_Foil material is not present in the stage, the function
+    falls back to applying a silver colour via ``_apply_color_to_prim``.
+
+    Returns 1 if the prim was bound, 0 otherwise.
+    """
+    global _viz_session_overrides
+
+    if not prim or not prim.IsValid():
+        return 0
+
+    # Mesh-only: reject anything that is not a Mesh prim
+    if prim.GetTypeName() != "Mesh":
+        return 0
+
+    fallback_mat_prim = stage.GetPrimAtPath(_FALLBACK_MATERIAL_PATH)
+    if not fallback_mat_prim or not fallback_mat_prim.IsValid():
+        print(f"[viz] Fallback material '{_FALLBACK_MATERIAL_PATH}' not found; using silver.")
+        return _apply_color_to_prim(stage, prim, _FALLBACK_COLOR)
+
+    session_layer = stage.GetSessionLayer()
+    if not session_layer:
+        return 0
+
+    old_target = stage.GetEditTarget()
+    stage.SetEditTarget(Usd.EditTarget(session_layer))
+    colored_count = 0
+
+    try:
+        mat = UsdShade.Material(fallback_mat_prim)
+        binding_api = UsdShade.MaterialBindingAPI.Apply(prim)
+
+        # Clear previous direct-binding targets before writing the new binding
+        # to prevent accumulation of multiple material references on repeated calls.
+        rel = binding_api.GetDirectBindingRel()
+        if rel and rel.IsValid():
+            rel.ClearTargets(True)
+
+        binding_api.Bind(mat, bindingStrength=UsdShade.Tokens.strongerThanDescendants)
+        _viz_session_overrides.add(prim.GetPath().pathString)
+        colored_count = 1
+    except Exception as e:
+        print(f"[viz] Fallback material bind failed on {prim.GetPath()}: {e}")
     finally:
         stage.SetEditTarget(old_target)
 
@@ -173,16 +328,24 @@ def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
     stage.SetEditTarget(Usd.EditTarget(session_layer))
 
     try:
-        # Remove the material-binding relationship we authored for each prim.
+        # Remove the material-binding relationship and displayColor override
+        # we authored for each geometry prim.
         for path_str in _viz_session_overrides:
             prim = stage.GetPrimAtPath(path_str)
             if not prim or not prim.IsValid():
                 continue
+            # Clear material binding written by _apply_color_to_prim /
+            # _apply_fallback_material_to_prim.
             rel = UsdShade.MaterialBindingAPI(prim).GetDirectBindingRel()
             if rel and rel.IsValid():
                 # ClearTargets(True) removes the relationship spec from the
                 # current edit target, restoring the weaker-layer binding.
                 rel.ClearTargets(True)
+            # Clear the primvars:displayColor override written by
+            # _apply_color_to_prim so the mesh reverts to its original colour.
+            disp_attr = prim.GetAttribute("primvars:displayColor")
+            if disp_attr and disp_attr.IsValid():
+                disp_attr.Clear()
             # For lights, clear the colour attribute override.
             if prim.HasAPI(UsdLux.LightAPI):
                 color_attr = prim.GetAttribute("inputs:color")
@@ -230,19 +393,47 @@ def _load_component_to_prim_map(mapping_json_path: str) -> Dict[str, str]:
         return data
 
 
+def _normalize_prim_paths(paths) -> List[str]:
+    """
+    Ensure *paths* is always a ``List[str]``.
+
+    Older ``FlownexMapping.json`` files stored prim paths as plain strings
+    rather than single-element lists.  This helper normalises both formats so
+    callers can always iterate safely.
+    """
+    if isinstance(paths, str):
+        return [paths]
+    return list(paths) if paths else []
+
+
 def _visualize_single_component(
     output_def: OutputDefinition, value: float, comp_to_prim_map: Dict[str, List[str]], 
     property_ranges: Dict[str, Dict[str, float]], cmap: str, usd_context=None,
 ) -> Dict[str, object]:
-    """Helper to visualize a single component, applying color to all its mapped prims."""
+    """
+    Visualize a single Flownex component by applying a color derived from
+    *value* to the mapped Mesh prim(s).
+
+    Target-finding strategy
+    -----------------------
+    1. **Direct Mesh scan** (primary): the stage is scanned for ``Mesh`` prims
+       whose ``flownex:componentName`` attribute is non-empty and matches
+       *component_id*.  The material is bound directly on each found Mesh prim
+       with ``strongerThanDescendants``; no subtree traversal is performed.
+    2. **JSON mapping fallback**: if no tagged Mesh prims are found via the
+       direct scan the pre-built ``comp_to_prim_map`` is consulted and
+       ``_apply_color_to_prim`` is called for each stored path.  Because
+       ``_apply_color_to_prim`` now enforces the Mesh-only rule it will
+       silently skip any path that resolves to a non-Mesh prim.
+
+    The ``"colored_paths"`` list in the returned dict always contains the paths
+    of the Mesh prims that were actually colored.  Callers use this to determine
+    which components received a color so that a fallback "no-data" material can
+    be applied to the remainder.
+    """
     key = output_def.Key
     component_id = output_def.ComponentIdentifier
     info = { "key": key, "status": "error", "message": "", "colored_prims": 0, "colored_paths": [] }
-
-    prim_paths = comp_to_prim_map.get(component_id)
-    if not prim_paths:
-        info["message"] = "Not found in mapping file"
-        return info
 
     pr = property_ranges.get(key)
     if not pr or pr.get("min") is None or pr.get("max") is None:
@@ -260,12 +451,27 @@ def _visualize_single_component(
         return info
 
     total_colored = 0
-    for prim_path in prim_paths:
-        prim = stage.GetPrimAtPath(prim_path)
-        colored_count = _apply_color_to_prim(stage, prim, rgb)
-        if colored_count > 0:
-            total_colored += colored_count
-            info["colored_paths"].append(prim_path)
+
+    # --- Primary: scan for Mesh prims tagged with this component name ---
+    mesh_prims = _find_mesh_prims_by_flownex_name(stage, component_id)
+    if mesh_prims:
+        for mesh_prim in mesh_prims:
+            colored_count = _apply_color_to_prim(stage, mesh_prim, rgb)
+            if colored_count > 0:
+                total_colored += colored_count
+                info["colored_paths"].append(mesh_prim.GetPath().pathString)
+    else:
+        # --- Fallback: use the pre-built JSON mapping ---
+        prim_paths = comp_to_prim_map.get(component_id)
+        if not prim_paths:
+            info["message"] = "Not found in stage scan or mapping file"
+            return info
+        for prim_path in _normalize_prim_paths(prim_paths):
+            prim = stage.GetPrimAtPath(prim_path)
+            colored_count = _apply_color_to_prim(stage, prim, rgb)
+            if colored_count > 0:
+                total_colored += colored_count
+                info["colored_paths"].append(prim_path)
 
     info["colored_prims"] = total_colored
     if total_colored > 0:
@@ -289,7 +495,12 @@ def visualize_property_layer(
         return None, None, None, None, set()
 
     stage = omni.usd.get_context().get_stage()
-    if stage and prims_to_reset:
+    if not stage:
+        if log_field:
+            log_field.model.set_value("Error: No USD stage is currently open.")
+        return None, None, None, None, set()
+
+    if prims_to_reset:
         _reset_prim_colors(stage, prims_to_reset)
     
     newly_colored_prims = set()
@@ -305,15 +516,18 @@ def visualize_property_layer(
     io_dir = user_config.Setup.IOFileDirectory
     mapping_json_path = os.path.join(io_dir, "FlownexMapping.json")
     
+    # The mapping file is used as a fallback only.  The primary coloring path
+    # scans the stage directly for prims tagged with ``flownex:componentName``,
+    # so a missing mapping file is not fatal.
     if not os.path.exists(mapping_json_path):
-        log_field.model.set_value(log_text + f"Error: Mapping file not found at {mapping_json_path}")
-        return None, None, None, None, newly_colored_prims
-
-    try:
-        comp_to_prim_map = _load_component_to_prim_map(mapping_json_path)
-    except Exception as e:
-        log_field.model.set_value(log_text + f"Error loading mapping file: {e}")
-        return None, None, None, None, newly_colored_prims
+        log_text += f"Note: Mapping file not found at {mapping_json_path}. Will rely on stage scan only.\n"
+        comp_to_prim_map: Dict[str, List[str]] = {}
+    else:
+        try:
+            comp_to_prim_map = _load_component_to_prim_map(mapping_json_path)
+        except Exception as e:
+            log_text += f"Warning: Could not load mapping file ({e}). Will rely on stage scan only.\n"
+            comp_to_prim_map = {}
 
     if not fnx_outputs:
         log_field.model.set_value(log_text + "Error: No Flownex outputs loaded.")
@@ -336,17 +550,15 @@ def visualize_property_layer(
     
     if not outputs_to_visualize:
         log_text += f"No output properties found containing '{selected_prop_name}'.\n"
-        log_text += "Setting all mapped prims to silver as a placeholder."
+        log_text += f"Binding fallback material '{_FALLBACK_MATERIAL_PATH}' to all prims in the mapping file.\n"
         log_field.model.set_value(log_text)
-        
-        # --- FIX: Color all mapped prims silver ---
-        silver_color = (0.75, 0.75, 0.75)
-        all_mapped_paths = {path for paths in comp_to_prim_map.values() for path in paths}
-        for path_str in all_mapped_paths:
-            prim = stage.GetPrimAtPath(path_str)
-            if _apply_color_to_prim(stage, prim, silver_color) > 0:
-                newly_colored_prims.add(path_str)
-        
+
+        for paths in comp_to_prim_map.values():
+            for path_str in _normalize_prim_paths(paths):
+                prim = stage.GetPrimAtPath(path_str)
+                if _apply_fallback_material_to_prim(stage, prim) > 0:
+                    newly_colored_prims.add(path_str)
+
         return None, None, None, None, newly_colored_prims
 
     unit = outputs_to_visualize[0].Unit if outputs_to_visualize else ""
@@ -374,6 +586,11 @@ def visualize_property_layer(
     property_ranges = {o.Key: {"min": vmin, "max": vmax} for o in outputs_to_visualize}
     
     processed, errors, skipped = 0, 0, 0
+    # Track which ComponentIdentifiers actually received a colour so that the
+    # fallback-material logic below can identify the remainder without relying
+    # on prim-path set subtraction (which breaks when colored_paths contains
+    # Mesh paths from the direct scan rather than the JSON-mapped parent paths).
+    colored_component_ids: Set[str] = set()
     
     for out_def in outputs_to_visualize:
         value_str = output_fields.get(out_def.Key)
@@ -393,15 +610,32 @@ def visualize_property_layer(
         if result_info["status"] == "ok":
             processed += result_info.get("colored_prims", 1)
             newly_colored_prims.update(result_info["colored_paths"])
-        elif "Not found in mapping file" in result_info["message"]:
+            colored_component_ids.add(out_def.ComponentIdentifier)
+        elif "Not found in stage scan or mapping file" in result_info["message"]:
             skipped += 1
         else:
             errors += 1
+
+    # Apply fallback material to components that are in the mapping but have no
+    # result for the selected property (or whose value was missing/invalid).
+    # We track by ComponentIdentifier, not prim path, so the check is correct
+    # whether colored_paths contains Mesh paths (direct scan) or mapping paths.
+    fallback_count = 0
+    for comp_id, paths in comp_to_prim_map.items():
+        if comp_id in colored_component_ids:
+            continue
+        for path_str in _normalize_prim_paths(paths):
+            prim = stage.GetPrimAtPath(path_str)
+            if _apply_fallback_material_to_prim(stage, prim) > 0:
+                newly_colored_prims.add(path_str)
+                fallback_count += 1
 
     log_text += f"\nVisualization complete.\n"
     log_text += f"  - Colored {processed} prims (geometry and lights).\n"
     log_text += f"  - Skipped {skipped} (not in mapping or no valid data).\n"
     log_text += f"  - Encountered {errors} errors during coloring.\n"
+    if fallback_count:
+        log_text += f"  - Applied '{_FALLBACK_MATERIAL_PATH}' to {fallback_count} prims with no data for '{selected_prop_name}'.\n"
     log_field.model.set_value(log_text)
 
     return vmin, vmax, selected_cmap, full_label, newly_colored_prims

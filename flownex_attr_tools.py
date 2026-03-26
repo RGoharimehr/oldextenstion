@@ -23,11 +23,18 @@ def deinstance_and_add_flownex(root="/World"):
             deinstanced += 1
 
     # --- Step 2: Add the custom attribute with a displayGroup ---
+    # Only Mesh prims are tagged – Xforms and other prim types are skipped
+    # intentionally so the mapping and visualization pipeline operates purely
+    # on renderable geometry.
     st.SetEditTarget(Usd.EditTarget(st.GetRootLayer()))
     added = 0
     with Sdf.ChangeBlock():
         for prim in st.Traverse():
             if not prim.IsValid() or not prim.GetPath().pathString.startswith(root) or prim.IsInstanceProxy() or not prim.IsDefined():
+                continue
+
+            # Mesh-only: skip every non-Mesh prim
+            if prim.GetTypeName() != "Mesh":
                 continue
             
             # If the attribute already exists, just skip this prim
@@ -93,6 +100,10 @@ def map_outputs_to_prims(io_dir, outputs_filename="Outputs.csv", root="/World", 
     matched_prim_count = 0
     for prim in st.Traverse():
         if not prim.IsValid() or not prim.GetPath().pathString.startswith(root) or prim.IsInstanceProxy():
+            continue
+
+        # Mesh-only: skip Xforms and any other prim types
+        if prim.GetTypeName() != "Mesh":
             continue
 
         # Only match prims where the user has explicitly assigned a non-empty

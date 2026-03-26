@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flownex Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet" crossorigin="anonymous" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+    crossorigin="anonymous"></script>
+  <style>
+    /* ================================================================
+       FLOWNEX – Dark Glassmorphic Engineering Dashboard
+       Reference palette:
+         bg #1a1a1a  panel #2d2d2d  card #363636
+         green #86ef47  blue #0050e0
+         text #fff  muted #b0b0b0  border #595959
+         ok #33ff33  err #ff3333  warn #ffcc00
+    ================================================================ */
+    :root {
+      --bg:       #1a1a1a;
+      --panel:    #2d2d2d;
+      --card:     #363636;
+      --green:    #86ef47;
+      --green-ok: #33ff33;
+      --blue:     #0050e0;
+      --white:    #ffffff;
+      --gray:     #b0b0b0;
+      --border:   #595959;
+      --red:      #ff3333;
+      --yellow:   #ffcc00;
+      --nav-h:    46px;
+      --bar-h:    42px;
+      --right-w:  336px;
+      --left-w:   66px;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      height: 100%; width: 100%; overflow: hidden;
+      background: var(--bg); color: var(--white);
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px; margin: 0;
+    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
+
+    /* ── TOP NAVBAR ── */
+    .fnx-nav {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
+      background: rgba(12,12,12,0.96);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(89,89,89,0.3);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; z-index: 400;
+    }
+    .fnx-brand {
+      font-size: 14px; font-weight: 700; color: var(--white); letter-spacing: 0.3px;
+    }
+    .fnx-brand .accent { color: var(--green); }
+    .fnx-brand .sub { font-size: 10px; color: var(--gray); font-weight: 400; margin-left: 6px; }
+
+    /* ── MAIN LAYOUT ── */
+    .fnx-layout {
+      position: fixed;
+      top: var(--nav-h); bottom: var(--bar-h); left: 0; right: 0;
+      display: flex; overflow: hidden;
+    }
+
+    /* ── LEFT COLORBAR ── */
+    .fnx-colorbar {
+      width: var(--left-w); flex-shrink: 0;
+      background: rgba(20,20,20,0.88);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-right: 1px solid rgba(89,89,89,0.22);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 10px 6px; gap: 4px;
+    }
+    .cbar-icon {
+      font-size: 15px; color: var(--gray); cursor: pointer;
+      transition: color 0.2s; margin-bottom: 4px;
+    }
+    .cbar-icon:hover { color: var(--green); }
+    .cbar-lbl {
+      font-size: 9px; font-weight: 700; color: var(--gray);
+      text-align: center; line-height: 1.2; word-break: break-all;
+    }
+    .cbar-gradient {
+      flex: 1; width: 16px; border-radius: 8px;
+      background: linear-gradient(to bottom,
+        #ff0000 0%, #ff7700 17%, #ffff00 33%,
+        #00ff00 50%, #00ccff 67%, #0000ff 83%, #8b00ff 100%);
+      box-shadow: 0 0 10px rgba(0,0,0,0.6);
+      margin: 4px 0; min-height: 80px;
+    }
+
+    /* ── CENTER AREA ── */
+    .fnx-center {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden; position: relative; min-width: 0;
+    }
+
+    /* Floating "Live Metrics" mini panel – top-left of center */
+    .fnx-live-panel {
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(22,22,22,0.82);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(89,89,89,0.28);
+      border-radius: 10px; padding: 10px 12px;
+      min-width: 170px; max-width: 260px; z-index: 20;
+    }
+    .live-panel-title {
+      font-size: 10px; font-weight: 700; color: var(--gray);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 7px;
+    }
+    .live-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+    .live-key { font-size: 10px; color: var(--gray); }
+    .live-val { font-size: 10px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
+
+    /* Main chart canvas fill */
+    .fnx-chart-wrap {
+      flex: 1; position: relative; display: flex;
+      align-items: center; justify-content: center; padding: 14px;
+    }
+    #plot-canvas { width: 100% !important; height: 100% !important; }
+    #plot-no-data {
+      position: absolute; color: var(--gray); font-size: 13px;
+      text-align: center; pointer-events: none; margin: 0;
+    }
+
+    /* ── RIGHT CONTROL PANEL ── */
+    .fnx-right {
+      width: var(--right-w); flex-shrink: 0;
+      background: rgba(20,20,20,0.92);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border-left: 1px solid rgba(89,89,89,0.28);
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: width 0.22s ease;
+    }
+    .fnx-right.fnx-right-collapsed { width: 0 !important; border-left: none; }
+
+    /* Floating button to re-open the dashboard when it's collapsed */
+    #btn-panel-reopen {
+      position: fixed; top: 50%; right: 0;
+      transform: translateY(-50%);
+      z-index: 350;
+      display: none;
+      background: rgba(20,20,20,0.92);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(89,89,89,0.35); border-right: none;
+      border-radius: 8px 0 0 8px;
+      padding: 10px 6px; cursor: pointer;
+      color: var(--gray); font-size: 14px; line-height: 1;
+      transition: color 0.2s;
+    }
+    #btn-panel-reopen:hover { color: var(--green); }
+
+    /* Panel header row: title + BRIDGE / START */
+    .fnx-panel-head {
+      padding: 9px 12px;
+      background: rgba(12,12,12,0.9);
+      border-bottom: 1px solid rgba(89,89,89,0.22);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .fnx-panel-title {
+      font-size: 10px; font-weight: 700; color: var(--gray);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .head-btns { display: flex; gap: 6px; align-items: center; }
+
+    /* Mode row (SIMULATE active | STEADY STATE | STOP) */
+    .fnx-mode-row {
+      display: flex; gap: 3px; padding: 6px 8px;
+      background: rgba(15,15,15,0.7);
+      border-bottom: 1px solid rgba(89,89,89,0.18);
+      flex-shrink: 0;
+    }
+    .fnx-mode-btn {
+      flex: 1; padding: 5px 4px; font-size: 10px; font-weight: 700;
+      border-radius: 8px; border: 1px solid rgba(89,89,89,0.45);
+      background: rgba(40,40,40,0.6); color: var(--gray);
+      cursor: pointer; transition: all 0.2s; text-align: center;
+      white-space: nowrap; line-height: 1.3;
+    }
+    .fnx-mode-btn:hover:not(:disabled) {
+      background: rgba(70,70,70,0.6); color: var(--white);
+    }
+    .fnx-mode-btn.mode-active {
+      background: var(--green); color: #1a1a1a;
+      border-color: var(--green);
+      box-shadow: 0 0 10px rgba(134,239,71,0.4);
+    }
+    .fnx-mode-btn.mode-stop { color: var(--red); border-color: rgba(255,51,51,0.4); }
+    .fnx-mode-btn.mode-stop:hover:not(:disabled) {
+      background: rgba(255,51,51,0.15);
+    }
+    .fnx-mode-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+
+    /* Scrollable tab nav inside panel */
+    .fnx-tabs-row {
+      display: flex; gap: 2px; padding: 5px 7px 2px;
+      overflow-x: auto; flex-shrink: 0;
+      background: rgba(14,14,14,0.75);
+      border-bottom: 1px solid rgba(89,89,89,0.18);
+      scrollbar-width: thin;
+      scrollbar-color: rgba(89,89,89,0.5) transparent;
+    }
+    .fnx-tabs-row::-webkit-scrollbar { display: block; height: 3px; }
+    .fnx-tabs-row::-webkit-scrollbar-track { background: transparent; }
+    .fnx-tabs-row::-webkit-scrollbar-thumb { background: rgba(89,89,89,0.5); border-radius: 2px; }
+    .fnx-tab-btn {
+      padding: 4px 9px; font-size: 10px; font-weight: 600;
+      border-radius: 7px; border: none;
+      background: transparent; color: var(--gray);
+      cursor: pointer; white-space: nowrap;
+      transition: all 0.2s; text-decoration: none; display: inline-block;
+    }
+    .fnx-tab-btn:hover { background: rgba(89,89,89,0.3); color: var(--white); }
+    .fnx-tab-btn.active {
+      background: var(--blue) !important; color: #fff !important;
+      box-shadow: 0 0 10px rgba(0,80,224,0.4);
+    }
+    .nav-tabs { border-bottom: none !important; }
+
+    /* Tab content scrollable area */
+    .fnx-tab-content { flex: 1; overflow-y: auto; padding: 10px; }
+    /* Ensure non-active panes are hidden (defensive: doesn't rely solely on Bootstrap) */
+    .tab-pane          { display: none; }
+    .tab-pane.show.active { display: block; }
+
+    /* Sections inside tabs */
+    .fnx-section { margin-bottom: 12px; }
+    .fnx-section-title {
+      font-size: 10px; font-weight: 700; color: var(--green);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 7px; padding-bottom: 4px;
+      border-bottom: 1px solid rgba(134,239,71,0.18);
+    }
+
+    /* ── BOTTOM METRICS BAR ── */
+    .fnx-metrics-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; height: var(--bar-h);
+      background: rgba(10,10,10,0.96);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid rgba(89,89,89,0.28);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 400; padding: 0 16px; gap: 0; overflow: hidden;
+    }
+    .fnx-metric { display: flex; align-items: center; gap: 5px; padding: 0 12px; }
+    .fnx-metric-sep { width: 1px; height: 16px; background: rgba(89,89,89,0.45); flex-shrink: 0; }
+    .metric-label { font-size: 9px; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: 0.4px; }
+    .metric-val { font-size: 12px; font-weight: 700; color: var(--white); font-variant-numeric: tabular-nums; }
+    .metric-val.running { color: var(--green); }
+    .metric-val.ready   { color: var(--yellow); }
+    .metric-val.offline { color: var(--red); }
+    .metric-val.connected { color: var(--blue); }
+    .metric-val.kpi-val { color: var(--green); }
+
+    /* ── BUTTONS ── */
+    .btn {
+      border-radius: 10px !important; font-size: 11px !important;
+      font-weight: 700 !important; padding: 5px 11px !important;
+      transition: all 0.2s ease !important; border: 1px solid transparent !important;
+      letter-spacing: 0.2px;
+    }
+    .btn:active:not(:disabled) { transform: translateY(1px); }
+    .btn:disabled { opacity: 0.33 !important; cursor: not-allowed !important; }
+
+    .btn-success {
+      background: var(--green) !important; color: #1a1a1a !important;
+      border-color: var(--green) !important;
+    }
+    .btn-success:hover:not(:disabled) {
+      background: #a0ff62 !important;
+      box-shadow: 0 0 12px rgba(134,239,71,0.5) !important;
+    }
+    .btn-danger {
+      background: rgba(255,51,51,0.1) !important; color: var(--red) !important;
+      border-color: rgba(255,51,51,0.5) !important;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(255,51,51,0.22) !important;
+      box-shadow: 0 0 8px rgba(255,51,51,0.3) !important;
+    }
+    .btn-primary {
+      background: var(--blue) !important; color: #fff !important;
+      border-color: var(--blue) !important;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #1a6aff !important;
+      box-shadow: 0 0 12px rgba(0,80,224,0.5) !important;
+    }
+    .btn-secondary {
+      background: rgba(89,89,89,0.2) !important; color: var(--gray) !important;
+      border-color: var(--border) !important;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(89,89,89,0.4) !important; color: var(--white) !important;
+    }
+    .btn-outline-secondary {
+      background: transparent !important; color: var(--gray) !important;
+      border-color: var(--border) !important;
+    }
+    .btn-outline-secondary:hover:not(:disabled) {
+      background: rgba(89,89,89,0.3) !important; color: var(--white) !important;
+    }
+    .btn-outline-light {
+      background: transparent !important; color: var(--gray) !important;
+      border-color: rgba(255,255,255,0.15) !important;
+    }
+    .btn-outline-light:hover:not(:disabled) {
+      background: rgba(255,255,255,0.07) !important; color: var(--white) !important;
+    }
+    /* BRIDGE – red outline, matches reference */
+    .btn-bridge {
+      background: transparent !important; color: var(--red) !important;
+      border: 1px solid var(--red) !important; border-radius: 20px !important;
+      font-size: 10px !important; padding: 4px 10px !important;
+    }
+    .btn-bridge:hover:not(:disabled) {
+      background: rgba(255,51,51,0.12) !important;
+    }
+
+    /* ── FORM CONTROLS ── */
+    label.form-label {
+      font-size: 10px !important; color: var(--gray) !important;
+      margin-bottom: 3px !important; text-transform: uppercase; letter-spacing: 0.4px;
+      display: block;
+    }
+    .form-control, .form-select {
+      background: rgba(12,12,12,0.75) !important; color: var(--white) !important;
+      border: 1px solid var(--border) !important; border-radius: 8px !important;
+      font-size: 12px !important;
+      transition: border-color 0.2s, box-shadow 0.2s !important;
+    }
+    .form-control:focus, .form-select:focus {
+      background: rgba(12,12,12,0.9) !important; color: var(--white) !important;
+      border-color: var(--green) !important;
+      box-shadow: 0 0 0 2px rgba(134,239,71,0.18) !important; outline: none !important;
+    }
+    .form-control[readonly] {
+      background: rgba(12,12,12,0.4) !important; color: var(--gray) !important;
+    }
+    .form-select option { background: #2d2d2d; color: var(--white); }
+
+    /* Checkboxes */
+    .form-check-input {
+      background-color: rgba(12,12,12,0.75) !important;
+      border-color: var(--border) !important; border-radius: 3px !important;
+    }
+    .form-check-input:checked {
+      background-color: var(--green) !important; border-color: var(--green) !important;
+    }
+    .form-check-input:focus { box-shadow: 0 0 0 2px rgba(134,239,71,0.2) !important; }
+    .form-check-label { color: var(--gray) !important; font-size: 11px !important; }
+
+    /* Range sliders */
+    .form-range {
+      -webkit-appearance: none; height: 3px;
+      background: rgba(89,89,89,0.4); border-radius: 2px; cursor: pointer;
+    }
+    .form-range::-webkit-slider-runnable-track {
+      height: 3px; background: rgba(89,89,89,0.4); border-radius: 2px;
+    }
+    .form-range::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 13px; height: 13px;
+      border-radius: 50%; background: var(--green);
+      margin-top: -5px; box-shadow: 0 0 6px rgba(134,239,71,0.6);
+      cursor: pointer; transition: box-shadow 0.2s;
+    }
+    .form-range::-webkit-slider-thumb:hover { box-shadow: 0 0 10px rgba(134,239,71,0.9); }
+    .form-range::-moz-range-thumb {
+      width: 13px; height: 13px; border-radius: 50%;
+      background: var(--green); border: none; cursor: pointer;
+    }
+    .form-range::-moz-range-track {
+      height: 3px; background: rgba(89,89,89,0.4); border-radius: 2px;
+    }
+    .slider-label {
+      min-width: 48px; text-align: right; font-size: 11px;
+      font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums;
+    }
+
+    /* ── TABLES ── */
+    .table { color: var(--white) !important; font-size: 11px !important; margin-bottom: 0 !important; }
+    .table thead th {
+      background: rgba(10,10,10,0.9) !important; color: var(--gray) !important;
+      font-size: 9px !important; text-transform: uppercase; letter-spacing: 0.4px;
+      border-bottom: 1px solid rgba(89,89,89,0.28) !important;
+      padding: 6px 8px !important; white-space: nowrap;
+    }
+    .table tbody td {
+      border-bottom: 1px solid rgba(89,89,89,0.12) !important;
+      padding: 5px 8px !important; background: transparent !important;
+    }
+    .table-hover tbody tr:hover td { background: rgba(134,239,71,0.04) !important; }
+    .table-dark { --bs-table-bg: transparent !important; }
+    .fnx-table-wrap { overflow-x: auto; border-radius: 7px; }
+
+    /* ── LOG ── */
+    #log-area, #mapping-log {
+      font-family: 'Cascadia Code', Consolas, monospace;
+      font-size: 10px; line-height: 1.5; max-height: 110px; overflow-y: auto;
+      background: rgba(6,6,6,0.8);
+      border: 1px solid rgba(89,89,89,0.22); border-radius: 6px;
+      padding: 6px 8px; color: var(--gray);
+    }
+    #mapping-log { max-height: 130px; min-height: 36px; }
+
+    /* ── BADGES / STATUS ── */
+    #status-badge {
+      font-size: 10px !important; font-weight: 700 !important;
+      border-radius: 20px !important; padding: 3px 10px !important;
+    }
+    .badge.bg-success   { background: var(--green) !important; color: #1a1a1a !important; }
+    .badge.bg-primary   { background: var(--blue)  !important; color: #fff !important; }
+    .badge.bg-secondary { background: rgba(89,89,89,0.3) !important; color: var(--gray) !important; border: 1px solid rgba(89,89,89,0.45) !important; }
+    .badge.bg-warning   { background: rgba(255,204,0,0.12) !important; color: var(--yellow) !important; border: 1px solid rgba(255,204,0,0.35) !important; }
+    .badge.bg-danger    { background: rgba(255,51,51,0.12) !important; color: var(--red) !important; border: 1px solid rgba(255,51,51,0.35) !important; }
+
+    /* ── TEXT UTILS ── */
+    .text-ok      { color: var(--green-ok) !important; }
+    .text-err     { color: var(--red)      !important; }
+    .text-success { color: var(--green)    !important; }
+    .text-danger  { color: var(--red)      !important; }
+    .text-warning { color: var(--yellow)   !important; }
+    .text-muted   { color: var(--gray)     !important; }
+    h6 { color: var(--green) !important; font-weight: 700 !important; }
+    code {
+      background: rgba(134,239,71,0.1); color: var(--green);
+      border-radius: 4px; padding: 1px 4px; font-size: 10px;
+    }
+    strong { color: var(--white); }
+    .output-table td, .output-table th { font-size: 11px; }
+    small { font-size: 10px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══ TOP NAVBAR ═══ -->
+<nav class="fnx-nav">
+  <span class="fnx-brand">
+    ⚙ <span class="accent">Flownex</span>
+    <span class="sub">Dashboard</span>
+  </span>
+  <span id="status-badge" class="badge bg-secondary">Connecting…</span>
+</nav>
+
+<!-- Floating button to re-open dashboard when collapsed -->
+<button id="btn-panel-reopen" onclick="toggleDashboard()" title="Open Dashboard">▶</button>
+
+<!-- ═══ MAIN LAYOUT ═══ -->
+<div class="fnx-layout">
+
+  <!-- ── LEFT COLORBAR ── -->
+  <div class="fnx-colorbar">
+    <div class="cbar-icon" title="Visualization Settings"
+      onclick="switchTab(document.querySelector('#mainTabs .fnx-tab-btn:nth-child(5)'),'tab-viz')">⚙</div>
+    <div class="cbar-lbl" id="cbar-prop" style="writing-mode:vertical-rl;transform:rotate(180deg);max-height:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+    <div class="cbar-lbl" id="cbar-max">—</div>
+    <div class="cbar-gradient" id="cbar-gradient"></div>
+    <div class="cbar-lbl" id="cbar-min">—</div>
+  </div>
+
+  <!-- ── CENTER AREA ── -->
+  <div class="fnx-center">
+
+    <!-- Floating live-metrics mini panel -->
+    <div class="fnx-live-panel">
+      <div class="live-panel-title">Live Metrics</div>
+      <div id="live-metrics-summary">
+        <span class="text-muted" style="font-size:10px">No data to plot.</span>
+      </div>
+    </div>
+
+    <!-- Full-area chart canvas -->
+    <div class="fnx-chart-wrap">
+      <canvas id="plot-canvas"></canvas>
+      <p id="plot-no-data">No data to plot.</p>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT CONTROL PANEL ── -->
+  <div class="fnx-right">
+
+    <!-- Header: Dashboard Control + BRIDGE / START -->
+    <div class="fnx-panel-head">
+      <span class="fnx-panel-title">Dashboard Control</span>
+      <div class="head-btns">
+        <button id="btn-load-defaults" class="btn btn-bridge"
+          onclick="runSteadyState(true)" title="Load Defaults &amp; Solve">BRIDGE</button>
+        <button id="btn-start-transient" class="btn btn-success btn-sm"
+          onclick="startTransient()">START</button>
+        <button id="btn-toggle-panel" class="btn btn-outline-secondary btn-sm"
+          onclick="toggleDashboard()" title="Hide Dashboard" style="padding:3px 7px!important;font-size:13px!important;">◀</button>
+      </div>
+    </div>
+
+    <!-- Mode row: SIMULATE (active label) | STEADY STATE | STOP -->
+    <div class="fnx-mode-row">
+      <div class="fnx-mode-btn mode-active">SIMULATE</div>
+      <button id="btn-steady-state" class="fnx-mode-btn"
+        onclick="runSteadyState(false)">STEADY STATE</button>
+      <button id="btn-stop-transient" class="fnx-mode-btn mode-stop"
+        onclick="stopTransient()" disabled>STOP</button>
+    </div>
+
+    <!-- Tab nav (scrollable pill bar) -->
+    <div class="fnx-tabs-row" id="mainTabs">
+      <a class="fnx-tab-btn active" href="#" onclick="switchTab(this,'tab-operating');return false;">Operating Conditions</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-geometry');return false;">Geometrical Des.</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-results');return false;">Results</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-plot');return false;">Plotting</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-viz');return false;">Visualization</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-mapping');return false;">Mapping</a>
+      <a class="fnx-tab-btn" href="#" onclick="switchTab(this,'tab-config');return false;">Config</a>
+    </div>
+
+    <!-- Tab content -->
+    <div class="tab-content fnx-tab-content">
+
+      <!-- ─── OPERATING CONDITIONS ─── -->
+      <div class="tab-pane fade show active" id="tab-operating">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Dynamic Inputs</div>
+          <div id="dynamic-inputs-container">
+            <p class="text-muted small">Loading…</p>
+          </div>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Live Output Values</div>
+          <div class="fnx-table-wrap">
+            <table class="table table-sm table-dark table-hover mb-0 output-table">
+              <thead><tr><th>Key</th><th>Value</th><th>Unit</th></tr></thead>
+              <tbody id="live-outputs-body">
+                <tr><td colspan="3" class="text-muted">No data yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Log</div>
+          <div id="log-area"></div>
+        </div>
+      </div>
+
+      <!-- ─── GEOMETRICAL DESIGN ─── -->
+      <div class="tab-pane fade" id="tab-geometry">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Static Inputs (Geometrical Design)</div>
+          <div id="static-inputs-container">
+            <p class="text-muted small">Loading…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── RESULTS ─── -->
+      <div class="tab-pane fade" id="tab-results">
+        <div class="fnx-section">
+          <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+            <label class="form-label mb-0" style="white-space:nowrap">Filter Category</label>
+            <select id="results-category-filter" class="form-select form-select-sm flex-grow-1"
+              onchange="renderResultsTable()">
+              <option value="">— All —</option>
+            </select>
+          </div>
+          <div class="fnx-section-title">Simulation Results</div>
+          <div class="fnx-table-wrap">
+            <table class="table table-sm table-dark table-hover mb-0 output-table">
+              <thead><tr><th>Cat.</th><th>Key</th><th>Desc.</th><th>Value</th><th>Unit</th></tr></thead>
+              <tbody id="results-body">
+                <tr><td colspan="5" class="text-muted">Run a simulation to see results.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── PLOTTING (controls; chart is in center) ─── -->
+      <div class="tab-pane fade" id="tab-plot">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Plot Settings</div>
+          <div class="mb-2">
+            <label class="form-label">X Axis</label>
+            <select id="plot-x-axis" class="form-select form-select-sm">
+              <option value="Time">Time (s)</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Y Axis – select one or more</label>
+            <div id="plot-y-checkboxes" style="max-height:220px;overflow-y:auto;">
+              <p class="text-muted small">Run a simulation to see available outputs.</p>
+            </div>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="plot-auto-refresh" />
+            <label class="form-check-label" for="plot-auto-refresh">Auto-refresh (2 s)</label>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary btn-sm flex-grow-1" onclick="renderPlot()">📈 Plot</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="clearPlot()" title="Clear">��</button>
+          </div>
+          <div class="mt-2">
+            <span id="plot-point-count" class="small text-muted"></span>
+          </div>
+        </div>
+        <div class="fnx-section">
+          <p class="small text-muted">
+            The chart is displayed in the main viewport on the left.
+            Select variables above and click <strong>Plot</strong>.
+          </p>
+        </div>
+      </div>
+
+      <!-- ─── VISUALIZATION ─── -->
+      <div class="tab-pane fade" id="tab-viz">
+        <div class="fnx-section">
+          <div class="fnx-section-title">USD Prim Colorization</div>
+          <div class="mb-2">
+            <label class="form-label">Property to Visualize</label>
+            <select id="viz-property" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Colormap</label>
+            <select id="viz-colormap" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
+          </div>
+          <div class="mb-2">
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="viz-manual-check"
+                onchange="toggleManualBounds(this.checked)" />
+              <label class="form-check-label" for="viz-manual-check">Set Manual Bounds</label>
+            </div>
+            <div class="row g-2" id="viz-bounds-row" style="display:none!important">
+              <div class="col-6">
+                <label class="form-label">Min</label>
+                <input type="number" id="viz-min" class="form-control form-control-sm"
+                  placeholder="Auto" onchange="saveVizSettings()" disabled />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Max</label>
+                <input type="number" id="viz-max" class="form-control form-control-sm"
+                  placeholder="Auto" onchange="saveVizSettings()" disabled />
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveVizSettings()">💾 Apply Viz Settings</button>
+          <span id="viz-save-msg" class="ms-2 small text-success d-none">Saved!</span>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">How it works</div>
+          <p class="small text-muted">
+            After each simulation step the Omniverse extension colours USD prims in the 3D viewport
+            using the selected property and colormap.
+          </p>
+          <p class="small text-muted">
+            Uses <strong>direct Mesh binding</strong>: Mesh prims tagged with
+            <code>flownex:componentName</code> are colored via a
+            <code>UsdPreviewSurface</code> material bound on the Mesh in the session layer.
+            Fallback: <code>/World/Looks/Aluminum_Foil</code>.
+          </p>
+        </div>
+      </div>
+
+      <!-- ─── RESULTS MAPPING ─── -->
+      <div class="tab-pane fade" id="tab-mapping">
+        <div class="fnx-section">
+          <div class="fnx-section-title">1 · Add Flownex Attribute</div>
+          <p class="small text-muted mb-2">
+            Adds a <code>flownex:componentName</code> attribute to every <strong>Mesh</strong> prim under the target path.
+          </p>
+          <div class="mb-2">
+            <label class="form-label">Target Prim Path</label>
+            <input type="text" id="mapping-root" class="form-control form-control-sm" value="/World" />
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="mappingAddAttribute()">
+            Start Prim Property Override
+          </button>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">2 · Generate Mapping Config</div>
+          <p class="small text-muted mb-2">
+            Matches <strong>Mesh</strong> prims by <code>flownex:componentName</code> and writes
+            <strong>FlownexMapping.json</strong>.
+          </p>
+          <button class="btn btn-success btn-sm" onclick="mappingGenerate()">
+            Generate FlownexMapping.json
+          </button>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Mapping Log</div>
+          <div id="mapping-log"></div>
+        </div>
+      </div>
+
+      <!-- ─── CONFIGURATION ─── -->
+      <div class="tab-pane fade" id="tab-config">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Flownex Configuration</div>
+          <div class="mb-2">
+            <label class="form-label">Project File (.proj / .projz)</label>
+            <input type="text" id="cfg-project" class="form-control form-control-sm"
+              placeholder="D:\path\to\project.proj" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">IO Definition Directory</label>
+            <input type="text" id="cfg-io-dir" class="form-control form-control-sm"
+              placeholder="D:\path\to\IOFiles" />
+          </div>
+          <div class="row mb-2 g-2">
+            <div class="col-7">
+              <label class="form-label">Polling Interval (s)</label>
+              <input type="number" id="cfg-poll-interval" class="form-control form-control-sm"
+                min="0.25" max="10" step="0.25" />
+            </div>
+            <div class="col-5 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cfg-solve-on-change" />
+                <label class="form-check-label" for="cfg-solve-on-change">Solve on Change</label>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveConfig()">💾 Save Configuration</button>
+          <span id="cfg-save-msg" class="ms-2 small text-success d-none">Saved!</span>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Flownex API Status</div>
+          <div class="mb-1 small">Detected: <span id="fnx-avail-label" class="fw-bold">…</span></div>
+          <div class="mb-2 small">Connected: <span id="fnx-conn-label" class="fw-bold">…</span></div>
+          <button class="btn btn-outline-light btn-sm" onclick="refreshStatus()">🔄 Refresh</button>
+        </div>
+      </div>
+
+    </div><!-- /tab-content -->
+  </div><!-- /right panel -->
+
+</div><!-- /layout -->
+
+<!-- ═══ BOTTOM KPI BAR ═══ -->
+<div class="fnx-metrics-bar">
+  <div class="fnx-metric">
+    <span class="metric-label">SIM STATUS</span>
+    <span class="metric-val" id="metric-status">—</span>
+  </div>
+  <div class="fnx-metric-sep"></div>
+  <div class="fnx-metric">
+    <span class="metric-label">IT LOAD</span>
+    <span class="metric-val kpi-val" id="kpi-it-load">N/A</span>
+  </div>
+  <div class="fnx-metric-sep"></div>
+  <div class="fnx-metric">
+    <span class="metric-label">AMBIENT TEMP</span>
+    <span class="metric-val kpi-val" id="kpi-ambient">N/A</span>
+  </div>
+  <div class="fnx-metric-sep"></div>
+  <div class="fnx-metric">
+    <span class="metric-label">PUE</span>
+    <span class="metric-val kpi-val" id="kpi-pue">N/A</span>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+  crossorigin="anonymous"></script>
+<script>
+// ============================================================
+// Constants
+// ============================================================
+const STATUS_POLL_INTERVAL_MS = 2000;
+const FMT_SMALL_THRESHOLD = 10;
+const FMT_SMALL_DECIMALS  = 4;
+const FMT_LARGE_DECIMALS  = 2;
+// Category name used to select which outputs appear on the Plotting tab
+const PLOT_CATEGORY = "plot";
+
+// ============================================================
+// Tab switching (custom – Bootstrap plugin not used here)
+// ============================================================
+function switchTab(clickedBtn, paneId) {
+  // Deactivate all tab buttons
+  document.querySelectorAll('#mainTabs .fnx-tab-btn').forEach(b => b.classList.remove('active'));
+  // Activate clicked button
+  if (clickedBtn) clickedBtn.classList.add('active');
+  // Hide all panes
+  document.querySelectorAll('.tab-content .tab-pane').forEach(p => {
+    p.classList.remove('show', 'active');
+  });
+  // Show target pane
+  const pane = document.getElementById(paneId);
+  if (pane) { pane.classList.add('show', 'active'); }
+}
+
+// ============================================================
+// Dashboard hide/show toggle
+// ============================================================
+function toggleDashboard() {
+  const panel     = document.querySelector('.fnx-right');
+  const btnToggle = document.getElementById('btn-toggle-panel');
+  const btnReopen = document.getElementById('btn-panel-reopen');
+  const collapsed = panel.classList.toggle('fnx-right-collapsed');
+  if (btnToggle) btnToggle.textContent = collapsed ? '▶' : '◀';
+  if (btnToggle) btnToggle.title = collapsed ? 'Show Dashboard' : 'Hide Dashboard';
+  if (btnReopen) btnReopen.style.display = collapsed ? '' : 'none';
+}
+
+// ============================================================
+// Colorbar legend – mirrors the Visualization tab settings
+// ============================================================
+const COLORMAP_GRADIENTS = {
+  // key: CSS linear-gradient string (top = high value, bottom = low value)
+  "viridis":   "linear-gradient(to bottom, #fde725, #7ad151, #22a884, #2a788e, #404587, #440154)",
+  "plasma":    "linear-gradient(to bottom, #f0f921, #fb8861, #cc4778, #7e03a8, #0d0887)",
+  "inferno":   "linear-gradient(to bottom, #fcffa4, #fca50a, #dd513a, #932667, #420a68, #000004)",
+  "magma":     "linear-gradient(to bottom, #fcfdbf, #fe9f6d, #de4968, #8c2981, #3b0f70, #000004)",
+  "cividis":   "linear-gradient(to bottom, #fee838, #c3b369, #8a8678, #575d6d, #3b496c, #00224e)",
+  "Blues":     "linear-gradient(to bottom, #08306b, #2171b5, #6baed6, #c6dbef, #f7fbff)",
+  "Greens":    "linear-gradient(to bottom, #00441b, #238b45, #74c476, #c7e9c0, #f7fcf5)",
+  "Reds":      "linear-gradient(to bottom, #67000d, #cb181d, #fb6a4a, #fcbba1, #fff5f0)",
+  "coolwarm":  "linear-gradient(to bottom, #b40426, #f7916a, #f2cbb7, #c0d4f5, #7b9ff9, #3b4cc0)",
+  "bwr":       "linear-gradient(to bottom, #ff0000, #ffffff, #0000ff)",
+  "seismic":   "linear-gradient(to bottom, #4d0000, #ff0000, #ffffff, #0000ff, #00004d)",
+  "jet":       "linear-gradient(to bottom, #7f0000, #ff0000, #ffff00, #00ffff, #0000ff, #00007f)",
+  "rainbow":   "linear-gradient(to bottom, #ff0000, #ff7700, #ffff00, #00ff00, #0000ff, #8b00ff)",
+  "gray":      "linear-gradient(to bottom, #ffffff, #888888, #000000)",
+};
+
+function updateColorbar(settings, propertyOptions, colormapOptions) {
+  // Colormap gradient
+  const cmapIdx  = settings.colormap_index ?? 0;
+  const cmapName = (colormapOptions || [])[cmapIdx] || "rainbow";
+  const gradient = COLORMAP_GRADIENTS[cmapName]
+                || COLORMAP_GRADIENTS["rainbow"];
+  document.getElementById("cbar-gradient").style.background = gradient;
+
+  // Property name label
+  const propIdx  = settings.property_index ?? 0;
+  const propName = (propertyOptions || [])[propIdx] || "";
+  document.getElementById("cbar-prop").textContent = propName;
+
+  // Min / Max labels
+  const hasManual = settings.manual_min !== null && settings.manual_max !== null;
+  if (hasManual) {
+    document.getElementById("cbar-max").textContent = fmtNum(settings.manual_max);
+    document.getElementById("cbar-min").textContent = fmtNum(settings.manual_min);
+  } else {
+    document.getElementById("cbar-max").textContent = "Auto";
+    document.getElementById("cbar-min").textContent = "Auto";
+  }
+}
+
+// Helper: format a number concisely for the colorbar label
+function fmtNum(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = parseFloat(v);
+  if (isNaN(n)) return String(v);
+  return Math.abs(n) < 10 ? n.toFixed(3) : n.toFixed(1);
+}
+
+// ============================================================
+// State
+// ============================================================
+let outputDefs      = [];
+let currentOutputs  = {};
+let statusPollTimer = null;
+let _vizPropertyOptions  = [];
+let _vizColormapOptions  = [];
+// KPI bar – input keys discovered from loaded input definitions
+let _itLoadKey      = null;
+let _ambientTempKey = null;
+
+// ============================================================
+// Boot
+// ============================================================
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadConfig();
+  await loadInputs("dynamic");
+  await loadInputs("static");
+  await loadOutputDefs();
+  await loadVizSettings();
+  refreshStatus();
+  startStatusPolling();
+
+  // Wire up plot auto-refresh checkbox
+  document.getElementById("plot-auto-refresh").addEventListener("change", function () {
+    if (this.checked) {
+      _plotAutoTimer = setInterval(async () => {
+        const s = await api("GET", "/api/simulation/status");
+        if (s && (s.transientRunning || Object.keys(s.outputs || {}).length)) {
+          renderPlot();
+        }
+      }, 2000);
+    } else {
+      stopPlotAutoRefresh();
+    }
+  });
+});
+
+// ============================================================
+// Config
+// ============================================================
+async function loadConfig() {
+  const cfg = await api("GET", "/api/config");
+  if (!cfg) return;
+  document.getElementById("cfg-project").value       = cfg.FlownexProject       || "";
+  document.getElementById("cfg-io-dir").value        = cfg.IOFileDirectory       || "";
+  document.getElementById("cfg-poll-interval").value = cfg.ResultPollingInterval || "1.0";
+  document.getElementById("cfg-solve-on-change").checked = !!cfg.SolveOnChange;
+}
+
+async function saveConfig() {
+  const body = {
+    FlownexProject:        document.getElementById("cfg-project").value,
+    IOFileDirectory:       document.getElementById("cfg-io-dir").value,
+    ResultPollingInterval: document.getElementById("cfg-poll-interval").value,
+    SolveOnChange:         document.getElementById("cfg-solve-on-change").checked,
+  };
+  const res = await api("POST", "/api/config", body);
+  if (res && res.ok) {
+    flash("cfg-save-msg");
+    await loadInputs("dynamic");
+    await loadInputs("static");
+    await loadOutputDefs();
+  }
+}
+
+// ============================================================
+// Inputs
+// ============================================================
+async function loadInputs(kind) {
+  const url         = kind === "static" ? "/api/static-inputs" : "/api/inputs";
+  const containerId = kind === "static" ? "static-inputs-container" : "dynamic-inputs-container";
+  const inputs      = await api("GET", url);
+  const container   = document.getElementById(containerId);
+  if (!inputs || !inputs.length) {
+    container.innerHTML = '<p class="text-muted small">No inputs defined. Check IO directory in Configuration.</p>';
+    return;
+  }
+  container.innerHTML = buildInputsHtml(inputs, kind);
+
+  // Detect IT Load and Ambient Temp keys for the KPI bar (search all input kinds)
+  _detectKpiInputKeys(inputs);
+}
+
+// Scan input definitions to discover which key maps to IT Load and Ambient Temp.
+// Matches descriptions/keys that contain "IT" as a whole word or prefix followed by
+// "load" or "heat" (e.g. "IT Heat Load", "IT_HEAT_LOAD") to avoid false positives
+// like "Inhibit" or "Bit".
+function _detectKpiInputKeys(inputs) {
+  for (const inp of inputs) {
+    const desc = (inp.description || inp.key || "").toLowerCase();
+    const key  = (inp.key || "").toLowerCase();
+    // IT Load: description/key starts with "it " / "it_" or contains " it " / "_it_"
+    const isItToken = /(?:^|[\s_])it(?:[\s_]|$)/.test(desc) ||
+                      /(?:^|_)it(?:_|$)/.test(key);
+    if (!_itLoadKey && isItToken &&
+        (desc.includes("load") || desc.includes("heat") ||
+         key.includes("load")  || key.includes("heat"))) {
+      _itLoadKey = inp.key;
+    }
+    if (!_ambientTempKey &&
+        (desc.includes("ambient") || key.includes("ambient"))) {
+      _ambientTempKey = inp.key;
+    }
+  }
+}
+
+function buildInputsHtml(inputs, kind) {
+  return inputs.map(inp => {
+    const uid = `inp-${kind}-${inp.key}`;
+    if (inp.editType === "checkbox") {
+      return `
+        <div class="d-flex align-items-center mb-2 gap-2">
+          <input class="form-check-input" type="checkbox" id="${uid}"
+            ${inp.defaultValue ? "checked" : ""}
+            onchange="onInputChange('${esc(inp.key)}', this.checked)" />
+          <label class="form-check-label" for="${uid}">${esc(inp.description)}</label>
+        </div>`;
+    }
+    return `
+      <div class="mb-2">
+        <label class="form-label" for="${uid}">
+          ${esc(inp.description)}${inp.unit ? ` [${esc(inp.unit)}]` : ""}
+        </label>
+        <div class="d-flex align-items-center gap-2">
+          <input type="range" class="form-range flex-grow-1" id="${uid}"
+            min="${inp.min}" max="${inp.max}" step="${inp.step}" value="${inp.defaultValue}"
+            oninput="document.getElementById('lbl-${uid}').textContent = this.value"
+            onchange="onInputChange('${esc(inp.key)}', parseFloat(this.value))" />
+          <span id="lbl-${uid}" class="slider-label">${inp.defaultValue}</span>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function onInputChange(key, value) {
+  await api("POST", "/api/inputs/values", { values: { [key]: value } });
+}
+
+// ============================================================
+// Output definitions
+// ============================================================
+async function loadOutputDefs() {
+  outputDefs = await api("GET", "/api/outputs") || [];
+
+  const sel  = document.getElementById("results-category-filter");
+  const cats = [...new Set(outputDefs.map(o => o.category).filter(Boolean))];
+  sel.innerHTML =
+    '<option value="">— All —</option>' +
+    cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+
+  renderResultsTable();
+  buildPlotYCheckboxes();
+}
+
+// ============================================================
+// Status polling
+// ============================================================
+function startStatusPolling() {
+  if (statusPollTimer) clearInterval(statusPollTimer);
+  statusPollTimer = setInterval(refreshStatus, STATUS_POLL_INTERVAL_MS);
+}
+
+async function refreshStatus() {
+  const s = await api("GET", "/api/simulation/status");
+  if (!s) return;
+
+  // Navbar badge
+  const badge = document.getElementById("status-badge");
+  if (s.transientRunning) {
+    badge.textContent = "⏩ Transient Running";  badge.className = "badge bg-success";
+  } else if (s.connected) {
+    badge.textContent = "✅ Connected";          badge.className = "badge bg-primary";
+  } else {
+    badge.textContent = s.flownexAvailable ? "⚡ Ready" : "⚠ Flownex Unavailable";
+    badge.className   = s.flownexAvailable ? "badge bg-warning text-dark" : "badge bg-danger";
+  }
+
+  // Config tab indicators
+  document.getElementById("fnx-avail-label").innerHTML =
+    s.flownexAvailable ? '<span class="text-success">✅ Detected</span>'
+                       : '<span class="text-danger">❌ Not found</span>';
+  document.getElementById("fnx-conn-label").innerHTML  =
+    s.connected        ? '<span class="text-success">✅ Yes</span>'
+                       : '<span class="text-danger">❌ No</span>';
+
+  // Button states
+  document.getElementById("btn-start-transient").disabled = s.transientRunning;
+  document.getElementById("btn-stop-transient") .disabled = !s.transientRunning;
+  document.getElementById("btn-steady-state")   .disabled = s.transientRunning;
+  document.getElementById("btn-load-defaults")  .disabled = s.transientRunning;
+
+  // Outputs
+  currentOutputs = s.outputs || {};
+  updateLiveOutputsTable();
+  renderResultsTable();
+  updateMetricsBar(s);
+  updateLiveMetricsSummary();
+
+  // Log
+  if (s.log && s.log.length) {
+    const logArea = document.getElementById("log-area");
+    logArea.innerHTML = s.log.map(l => `<div>${esc(l)}</div>`).join("");
+    logArea.scrollTop = logArea.scrollHeight;
+  }
+}
+
+function updateLiveOutputsTable() {
+  const tbody   = document.getElementById("live-outputs-body");
+  const entries = Object.entries(currentOutputs);
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No data yet</td></tr>';
+    return;
+  }
+  const defMap  = Object.fromEntries(outputDefs.map(o => [o.key, o]));
+  tbody.innerHTML = entries
+    .map(([k, v]) => {
+      const def = defMap[k] || {};
+      return `<tr><td>${esc(k)}</td><td>${fmtVal(v)}</td><td class="text-muted">${esc(def.unit || "")}</td></tr>`;
+    })
+    .join("");
+}
+
+function renderResultsTable() {
+  const filterCat = document.getElementById("results-category-filter").value;
+  const tbody     = document.getElementById("results-body");
+  const filtered  = filterCat ? outputDefs.filter(o => o.category === filterCat) : outputDefs;
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No outputs defined.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(o => {
+    const val    = currentOutputs[o.key];
+    const valStr = (val !== undefined && val !== null)
+      ? fmtVal(val)
+      : '<span class="text-muted">—</span>';
+    return `<tr>
+      <td>${esc(o.category)}</td>
+      <td>${esc(o.key)}</td>
+      <td>${esc(o.description)}</td>
+      <td>${valStr}</td>
+      <td class="text-muted">${esc(o.unit)}</td>
+    </tr>`;
+  }).join("");
+}
+
+// ============================================================
+// Bottom KPI Bar
+// ============================================================
+function updateMetricsBar(s) {
+  // SIM STATUS
+  const el = document.getElementById("metric-status");
+  if (s.transientRunning) {
+    el.textContent = "RUNNING";   el.className = "metric-val running";
+  } else if (s.connected) {
+    el.textContent = "CONNECTED"; el.className = "metric-val connected";
+  } else if (s.flownexAvailable) {
+    el.textContent = "READY";     el.className = "metric-val ready";
+  } else {
+    el.textContent = "OFFLINE";   el.className = "metric-val offline";
+  }
+
+  // IT LOAD – from current input values (changes only when inputs change)
+  const inputVals = s.inputValues || {};
+  const itVal  = _itLoadKey     ? inputVals[_itLoadKey]     : undefined;
+  const ambVal = _ambientTempKey ? inputVals[_ambientTempKey] : undefined;
+  document.getElementById("kpi-it-load").textContent =
+    itVal  !== undefined && itVal  !== null ? fmtVal(itVal)  : "N/A";
+  document.getElementById("kpi-ambient").textContent =
+    ambVal !== undefined && ambVal !== null ? fmtVal(ambVal) : "N/A";
+
+  // PUE – from current simulation outputs (updates every status poll)
+  const pueVal = (s.outputs || {})["PUE"];
+  document.getElementById("kpi-pue").textContent =
+    pueVal !== undefined && pueVal !== null ? fmtVal(pueVal) : "N/A";
+}
+
+// ============================================================
+// Live Metrics Summary (top-left floating panel)
+// ============================================================
+function updateLiveMetricsSummary() {
+  const el      = document.getElementById("live-metrics-summary");
+  const entries = Object.entries(currentOutputs).slice(0, 5);
+  if (!entries.length) {
+    el.innerHTML = '<span class="text-muted" style="font-size:10px">No data to plot.</span>';
+    return;
+  }
+  const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
+  el.innerHTML = entries.map(([k, v]) => {
+    const def  = defMap[k] || {};
+    const unit = def.unit || "";
+    return `<div class="live-row">
+      <span class="live-key">${esc(k)}</span>
+      <span class="live-val">${fmtVal(v)}<span style="color:var(--gray);font-weight:400"> ${esc(unit)}</span></span>
+    </div>`;
+  }).join("");
+}
+
+// ============================================================
+// Visualization settings
+// ============================================================
+async function loadVizSettings() {
+  const data = await api("GET", "/api/viz/settings");
+  if (!data) return;
+
+  _vizPropertyOptions = data.propertyOptions || [];
+  _vizColormapOptions = data.colormapOptions || [];
+
+  const propSel = document.getElementById("viz-property");
+  propSel.innerHTML = _vizPropertyOptions
+    .map((p, i) => `<option value="${i}">${esc(p)}</option>`)
+    .join("");
+
+  const cmapSel = document.getElementById("viz-colormap");
+  cmapSel.innerHTML = _vizColormapOptions
+    .map((c, i) => `<option value="${i}">${esc(c)}</option>`)
+    .join("");
+
+  const s = data.settings || {};
+  propSel.value = s.property_index ?? 0;
+  cmapSel.value = s.colormap_index ?? 0;
+
+  const hasManual = s.manual_min !== null || s.manual_max !== null;
+  document.getElementById("viz-manual-check").checked = hasManual;
+  toggleManualBounds(hasManual);
+  if (hasManual) {
+    document.getElementById("viz-min").value = s.manual_min ?? "";
+    document.getElementById("viz-max").value = s.manual_max ?? "";
+  }
+
+  // Sync the left-side colorbar legend
+  updateColorbar(s, _vizPropertyOptions, _vizColormapOptions);
+}
+
+function toggleManualBounds(enabled) {
+  const row = document.getElementById("viz-bounds-row");
+  row.style.setProperty("display", enabled ? "flex" : "none", "important");
+  document.getElementById("viz-min").disabled = !enabled;
+  document.getElementById("viz-max").disabled = !enabled;
+}
+
+async function saveVizSettings() {
+  const useManual = document.getElementById("viz-manual-check").checked;
+  const minVal    = document.getElementById("viz-min").value;
+  const maxVal    = document.getElementById("viz-max").value;
+  const body = {
+    property_index: parseInt(document.getElementById("viz-property").value, 10),
+    colormap_index: parseInt(document.getElementById("viz-colormap").value, 10),
+    manual_min: useManual && minVal !== "" ? parseFloat(minVal) : null,
+    manual_max: useManual && maxVal !== "" ? parseFloat(maxVal) : null,
+  };
+  const res = await api("POST", "/api/viz/settings", body);
+  if (res && res.ok) {
+    flash("viz-save-msg");
+    // Sync colorbar to new settings
+    updateColorbar(body, _vizPropertyOptions, _vizColormapOptions);
+  }
+}
+
+// ============================================================
+// Results Mapping
+// ============================================================
+async function mappingAddAttribute() {
+  const root = document.getElementById("mapping-root").value || "/World";
+  logMapping("⏳ Adding attribute…");
+  const res = await api("POST", "/api/mapping/add-attribute", { root });
+  logMapping(res ? (res.ok ? "✅ " : "❌ ") + res.message : "❌ No response");
+}
+
+async function mappingGenerate() {
+  logMapping("⏳ Generating FlownexMapping.json…");
+  const res = await api("POST", "/api/mapping/generate");
+  logMapping(res ? (res.ok ? "✅ " : "❌ ") + res.message : "❌ No response");
+}
+
+function logMapping(msg) {
+  const el  = document.getElementById("mapping-log");
+  const div = document.createElement("div");
+  div.className = msg.startsWith("✅") ? "text-ok" : msg.startsWith("❌") ? "text-err" : "";
+  div.textContent = msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ============================================================
+// Simulation control
+// ============================================================
+async function startTransient() {
+  showToast(await api("POST", "/api/simulation/start-transient"));
+}
+
+async function stopTransient() {
+  showToast(await api("POST", "/api/simulation/stop-transient"));
+}
+
+async function runSteadyState(loadDefaults) {
+  const url   = loadDefaults ? "/api/simulation/load-defaults" : "/api/simulation/steady-state";
+  const btnId = loadDefaults ? "btn-load-defaults" : "btn-steady-state";
+  const btn   = document.getElementById(btnId);
+  const orig  = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = "⏳ …";
+
+  const res = await api("POST", url);
+  showToast(res);
+  btn.disabled    = false;
+  btn.textContent = orig;
+
+  if (res && res.outputs) {
+    currentOutputs = res.outputs;
+    updateLiveOutputsTable();
+    renderResultsTable();
+  }
+}
+
+// ============================================================
+// Plotting
+// ============================================================
+const PLOT_COLORS = [
+  '#86ef47','#0050e0','#ff007f','#ffcc00','#00e6d9',
+  '#ff5733','#9d6cff','#60b3ff','#ff9f40','#4bc0c0',
+];
+let _plotChart     = null;
+let _plotAutoTimer = null;
+
+function buildPlotYCheckboxes() {
+  const container = document.getElementById("plot-y-checkboxes");
+  if (!outputDefs || !outputDefs.length) return;
+  // Only show outputs that belong to the "plot" category (case-insensitive)
+  const plotDefs = outputDefs.filter(o => (o.category || "").toLowerCase() === PLOT_CATEGORY);
+  if (!plotDefs.length) {
+    container.innerHTML = `<p class="text-muted small">No outputs with category "${esc(PLOT_CATEGORY)}" defined.</p>`;
+    return;
+  }
+  container.innerHTML = plotDefs.map(o => {
+    const uid = `plot-y-${o.key}`;
+    const lbl = o.description ? `${esc(o.description)} [${esc(o.unit || o.key)}]` : esc(o.key);
+    return `
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="checkbox" id="${uid}" value="${esc(o.key)}" />
+        <label class="form-check-label small" for="${uid}">${lbl}</label>
+      </div>`;
+  }).join("");
+}
+
+async function renderPlot() {
+  const history = await api("GET", "/api/history");
+  if (!history || !history.length) {
+    document.getElementById("plot-no-data").style.display = "";
+    if (_plotChart) { _plotChart.destroy(); _plotChart = null; }
+    document.getElementById("plot-point-count").textContent = "";
+    return;
+  }
+
+  const xKey  = document.getElementById("plot-x-axis").value || "Time";
+  const yKeys = Array.from(
+    document.querySelectorAll("#plot-y-checkboxes input[type=checkbox]:checked")
+  ).map(cb => cb.value);
+
+  if (!yKeys.length) {
+    document.getElementById("plot-no-data").textContent =
+      "Select at least one Y-axis variable, then click Plot.";
+    document.getElementById("plot-no-data").style.display = "";
+    return;
+  }
+
+  document.getElementById("plot-no-data").style.display = "none";
+  document.getElementById("plot-point-count").textContent =
+    `${history.length} data point${history.length !== 1 ? "s" : ""}`;
+
+  const xData  = history.map(d => d[xKey] ?? null);
+  const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
+
+  const datasets = yKeys.map((key, i) => ({
+    label:           defMap[key] ? `${defMap[key].description || key} [${defMap[key].unit || ""}]` : key,
+    data:            history.map(d => d[key] ?? null),
+    borderColor:     PLOT_COLORS[i % PLOT_COLORS.length],
+    backgroundColor: PLOT_COLORS[i % PLOT_COLORS.length] + "22",
+    borderWidth:     2,
+    pointRadius:     history.length > 100 ? 0 : 3,
+    tension:         0.2,
+    spanGaps:        true,
+  }));
+
+  const cfg = {
+    type: "line",
+    data: { labels: xData, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: {
+          ticks: { color: "#888", maxTicksLimit: 10, font: { size: 10 } },
+          grid:  { color: "rgba(89,89,89,0.2)" },
+          title: { display: true, text: xKey, color: "#999", font: { size: 11 } },
+        },
+        y: {
+          ticks: { color: "#888", font: { size: 10 } },
+          grid:  { color: "rgba(89,89,89,0.2)" },
+          title: { display: true, text: "Value", color: "#999", font: { size: 11 } },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: "#ccc", boxWidth: 12, font: { size: 11 } } },
+        tooltip: { mode: "index", intersect: false },
+      },
+    },
+  };
+
+  const canvas = document.getElementById("plot-canvas");
+  if (_plotChart) {
+    _plotChart.data    = cfg.data;
+    _plotChart.options = cfg.options;
+    _plotChart.update("none");
+  } else {
+    _plotChart = new Chart(canvas, cfg);
+  }
+}
+
+function clearPlot() {
+  if (_plotChart) { _plotChart.destroy(); _plotChart = null; }
+  document.getElementById("plot-no-data").style.display = "";
+  document.getElementById("plot-no-data").textContent = "No data to plot.";
+  document.getElementById("plot-point-count").textContent = "";
+  stopPlotAutoRefresh();
+  document.getElementById("plot-auto-refresh").checked = false;
+}
+
+function stopPlotAutoRefresh() {
+  if (_plotAutoTimer) { clearInterval(_plotAutoTimer); _plotAutoTimer = null; }
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+async function api(method, url, body) {
+  try {
+    const opts = { method, headers: { "Content-Type": "application/json" } };
+    if (body) opts.body = JSON.stringify(body);
+    const resp = await fetch(url, opts);
+    return await resp.json();
+  } catch (e) {
+    console.error(url, e);
+    return null;
+  }
+}
+
+function fmtVal(v) {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "number")
+    return v.toFixed(Math.abs(v) < FMT_SMALL_THRESHOLD ? FMT_SMALL_DECIMALS : FMT_LARGE_DECIMALS);
+  return String(v);
+}
+
+function esc(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function flash(id) {
+  const el = document.getElementById(id);
+  el.classList.remove("d-none");
+  setTimeout(() => el.classList.add("d-none"), 2000);
+}
+
+function showToast(res) {
+  if (!res) return;
+  const logArea = document.getElementById("log-area");
+  const div     = document.createElement("div");
+  div.className = res.ok ? "text-ok" : "text-err";
+  div.textContent = (res.ok ? "✅ " : "❌ ") + (res.message || (res.ok ? "OK" : "Error"));
+  logArea.appendChild(div);
+  logArea.scrollTop = logArea.scrollHeight;
+}
+</script>
+</body>
+</html>
