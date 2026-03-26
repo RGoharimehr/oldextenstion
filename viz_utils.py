@@ -6,7 +6,7 @@ from typing import Dict, Optional, Tuple, List, Set
 from .fnx_api import FNXApi
 from .fnx_io_definition import OutputDefinition
 import omni.usd
-from pxr import Usd, UsdGeom, Gf, Vt, Sdf, UsdLux
+from pxr import Usd, UsdGeom, Gf, Vt, Sdf, UsdLux, UsdShade
 
 
 # pxr is available in Omniverse for USD ops
@@ -59,9 +59,17 @@ def get_visualizable_properties():
 # Visualization session-layer state
 # ---------------------------------------------------------------------------
 
-# Tracks which prim paths have had a displayColor override written to the
-# session layer so that _reset_prim_colors can remove exactly those overrides
-# (and nothing else) without touching the rest of the session layer.
+# Stage path of the fallback material applied to prims when no output data
+# is available.  The material already exists in the root layer so binding it
+# costs only a single relationship write with no new prims created.
+# NOTE: This path is case-sensitive and must match the exact USD prim path
+# in the stage (including the capitalisation of "Aluminum_Foil").
+_FALLBACK_MATERIAL_PATH = "/World/Looks/Aluminum_Foil"
+
+# Tracks which prim paths have had a session-layer override (either a
+# displayColor primvar or a material binding) written by the viz functions,
+# so that _reset_prim_colors can remove exactly those overrides and nothing
+# else.
 _viz_session_overrides: Set[str] = set()
 
 
@@ -151,27 +159,85 @@ def _apply_color_to_prim(stage: Usd.Stage, prim: Usd.Prim, rgb: Tuple[float, flo
 
 def _apply_fallback_material_to_prim(stage: Usd.Stage, prim: Usd.Prim) -> int:
     """
-    Applies a neutral silver colour to *prim* when no output data is available.
+    Applied to an Xform prim when no simulation output is available for it.
 
-    Delegates directly to ``_apply_color_to_prim`` with a silver RGB value
-    ``(0.75, 0.75, 0.75)`` using the same ``primvars:displayColor`` mechanism,
-    so no material lookup or binding is required.
+    Strategy
+    --------
+    * Binds the stage's existing ``/World/Looks/Aluminum_Foil`` material to the
+      Xform via ``MaterialBindingAPI`` with ``strongerThanDescendants`` strength
+      so all child geometry inherits the neutral appearance.
+    * Clears any ``primvars:displayColor`` override that may have been set by a
+      previous visualization pass so that the material colour is not masked.
+
+    This is inexpensive: a single relationship write (no new prims created).
+
+    If ``Aluminum_Foil`` is absent from the stage the function falls back to
+    setting a silver ``primvars:displayColor`` via ``_apply_color_to_prim``.
 
     Returns 1 on success, 0 on failure.
     """
+    global _viz_session_overrides
+
     if not prim or not prim.IsValid():
         return 0
-    return _apply_color_to_prim(stage, prim, (0.75, 0.75, 0.75))
+
+    # Operate on the Xform ancestor so the override covers all children.
+    prim = _get_xform_target(prim)
+
+    fallback_mat_prim = stage.GetPrimAtPath(_FALLBACK_MATERIAL_PATH)
+    if not fallback_mat_prim or not fallback_mat_prim.IsValid():
+        # Aluminum_Foil not present in this stage – use silver displayColor.
+        print(f"[viz] '{_FALLBACK_MATERIAL_PATH}' not found; using silver fallback.")
+        return _apply_color_to_prim(stage, prim, (0.75, 0.75, 0.75))
+
+    session_layer = stage.GetSessionLayer()
+    if not session_layer:
+        return 0
+
+    old_target = stage.GetEditTarget()
+    stage.SetEditTarget(Usd.EditTarget(session_layer))
+    colored_count = 0
+
+    try:
+        # Remove any displayColor primvar from a previous viz pass so the
+        # material colour is not overridden by a stale primvar opinion.
+        pv_api = UsdGeom.PrimvarsAPI(prim)
+        pv = pv_api.GetPrimvar("displayColor")
+        if pv and pv.IsDefined():
+            prim.RemoveProperty(pv.GetAttr().GetName())
+
+        # Bind the existing Aluminum_Foil material.  strongerThanDescendants
+        # ensures all child Mesh prims inherit this appearance without needing
+        # individual bindings.
+        mat = UsdShade.Material(fallback_mat_prim)
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+            mat, UsdShade.Tokens.strongerThanDescendants
+        )
+        _viz_session_overrides.add(prim.GetPath().pathString)
+        colored_count = 1
+    except Exception as e:
+        print(f"[viz] Fallback material bind failed on {prim.GetPath()}: {e}")
+    finally:
+        stage.SetEditTarget(old_target)
+
+    return colored_count
 
 
 def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
     """
-    Undo all visualization colour overrides written to the session layer by
-    previous calls to ``_apply_color_to_prim``.
+    Undo all visualization overrides written to the session layer by previous
+    calls to ``_apply_color_to_prim`` and ``_apply_fallback_material_to_prim``.
 
-    Clears the ``primvars:displayColor`` attribute (and ``inputs:color`` for
-    lights) that were set in the session layer, restoring prims to whatever
-    colour opinion exists in weaker layers.
+    For each tracked prim the function attempts to clear **both** kinds of
+    session-layer opinion that may have been written:
+
+    * ``primvars:displayColor`` – written by ``_apply_color_to_prim``
+    * ``MaterialBindingAPI`` relationship – written by
+      ``_apply_fallback_material_to_prim``
+    * ``inputs:color`` – written for light prims
+
+    Trying to clear an opinion that was never written is a no-op, so it is safe
+    to attempt both for every prim without extra bookkeeping.
 
     The *prim_paths* parameter is kept for API compatibility; the authoritative
     set of paths to clean up is the module-level ``_viz_session_overrides``.
@@ -193,11 +259,18 @@ def _reset_prim_colors(stage: Usd.Stage, prim_paths: Set[str]):
             prim = stage.GetPrimAtPath(path_str)
             if not prim or not prim.IsValid():
                 continue
-            # Clear the displayColor primvar we authored.
+
+            # Clear displayColor primvar (set by _apply_color_to_prim).
             pv_api = UsdGeom.PrimvarsAPI(prim)
             pv = pv_api.GetPrimvar("displayColor")
             if pv and pv.IsDefined():
                 prim.RemoveProperty(pv.GetAttr().GetName())
+
+            # Clear material binding relationship (set by fallback function).
+            rel = UsdShade.MaterialBindingAPI(prim).GetDirectBindingRel()
+            if rel and rel.IsValid():
+                rel.ClearTargets(True)
+
             # For lights, also clear the colour attribute override.
             if prim.HasAPI(UsdLux.LightAPI):
                 color_attr = prim.GetAttribute("inputs:color")
@@ -345,7 +418,7 @@ def visualize_property_layer(
     
     if not outputs_to_visualize:
         log_text += f"No output properties found containing '{selected_prop_name}'.\n"
-        log_text += f"Applying silver fallback colour to all mapped prims.\n"
+        log_text += f"No matching output data. Applying fallback material ('{_FALLBACK_MATERIAL_PATH}') to all mapped prims.\n"
         log_field.model.set_value(log_text)
 
         all_mapped_paths = {path for paths in comp_to_prim_map.values() for path in paths}
