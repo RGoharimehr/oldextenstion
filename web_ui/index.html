@@ -135,7 +135,25 @@
       backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
       border-left: 1px solid rgba(89,89,89,0.28);
       display: flex; flex-direction: column; overflow: hidden;
+      transition: width 0.22s ease;
     }
+    .fnx-right.fnx-right-collapsed { width: 0 !important; border-left: none; }
+
+    /* Floating button to re-open the dashboard when it's collapsed */
+    #btn-panel-reopen {
+      position: fixed; top: 50%; right: 0;
+      transform: translateY(-50%);
+      z-index: 350;
+      display: none;
+      background: rgba(20,20,20,0.92);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(89,89,89,0.35); border-right: none;
+      border-radius: 8px 0 0 8px;
+      padding: 10px 6px; cursor: pointer;
+      color: var(--gray); font-size: 14px; line-height: 1;
+      transition: color 0.2s;
+    }
+    #btn-panel-reopen:hover { color: var(--green); }
 
     /* Panel header row: title + BRIDGE / START */
     .fnx-panel-head {
@@ -181,13 +199,16 @@
 
     /* Scrollable tab nav inside panel */
     .fnx-tabs-row {
-      display: flex; gap: 2px; padding: 5px 7px;
+      display: flex; gap: 2px; padding: 5px 7px 2px;
       overflow-x: auto; flex-shrink: 0;
       background: rgba(14,14,14,0.75);
       border-bottom: 1px solid rgba(89,89,89,0.18);
-      scrollbar-width: none;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(89,89,89,0.5) transparent;
     }
-    .fnx-tabs-row::-webkit-scrollbar { display: none; }
+    .fnx-tabs-row::-webkit-scrollbar { display: block; height: 3px; }
+    .fnx-tabs-row::-webkit-scrollbar-track { background: transparent; }
+    .fnx-tabs-row::-webkit-scrollbar-thumb { background: rgba(89,89,89,0.5); border-radius: 2px; }
     .fnx-tab-btn {
       padding: 4px 9px; font-size: 10px; font-weight: 600;
       border-radius: 7px; border: none;
@@ -204,6 +225,9 @@
 
     /* Tab content scrollable area */
     .fnx-tab-content { flex: 1; overflow-y: auto; padding: 10px; }
+    /* Ensure non-active panes are hidden (defensive: doesn't rely solely on Bootstrap) */
+    .tab-pane          { display: none; }
+    .tab-pane.show.active { display: block; }
 
     /* Sections inside tabs */
     .fnx-section { margin-bottom: 12px; }
@@ -231,6 +255,7 @@
     .metric-val.ready   { color: var(--yellow); }
     .metric-val.offline { color: var(--red); }
     .metric-val.connected { color: var(--blue); }
+    .metric-val.kpi-val { color: var(--green); }
 
     /* ── BUTTONS ── */
     .btn {
@@ -422,6 +447,9 @@
   <span id="status-badge" class="badge bg-secondary">Connecting…</span>
 </nav>
 
+<!-- Floating button to re-open dashboard when collapsed -->
+<button id="btn-panel-reopen" onclick="toggleDashboard()" title="Open Dashboard">▶</button>
+
 <!-- ═══ MAIN LAYOUT ═══ -->
 <div class="fnx-layout">
 
@@ -465,6 +493,8 @@
           onclick="runSteadyState(true)" title="Load Defaults &amp; Solve">BRIDGE</button>
         <button id="btn-start-transient" class="btn btn-success btn-sm"
           onclick="startTransient()">START</button>
+        <button id="btn-toggle-panel" class="btn btn-outline-secondary btn-sm"
+          onclick="toggleDashboard()" title="Hide Dashboard" style="padding:3px 7px!important;font-size:13px!important;">◀</button>
       </div>
     </div>
 
@@ -705,14 +735,27 @@
 
 </div><!-- /layout -->
 
-<!-- ═══ BOTTOM METRICS BAR ═══ -->
+<!-- ═══ BOTTOM KPI BAR ═══ -->
 <div class="fnx-metrics-bar">
   <div class="fnx-metric">
     <span class="metric-label">SIM STATUS</span>
     <span class="metric-val" id="metric-status">—</span>
   </div>
   <div class="fnx-metric-sep"></div>
-  <div id="metrics-outputs" style="display:contents"></div>
+  <div class="fnx-metric">
+    <span class="metric-label">IT LOAD</span>
+    <span class="metric-val kpi-val" id="kpi-it-load">N/A</span>
+  </div>
+  <div class="fnx-metric-sep"></div>
+  <div class="fnx-metric">
+    <span class="metric-label">AMBIENT TEMP</span>
+    <span class="metric-val kpi-val" id="kpi-ambient">N/A</span>
+  </div>
+  <div class="fnx-metric-sep"></div>
+  <div class="fnx-metric">
+    <span class="metric-label">PUE</span>
+    <span class="metric-val kpi-val" id="kpi-pue">N/A</span>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
@@ -725,6 +768,8 @@ const STATUS_POLL_INTERVAL_MS = 2000;
 const FMT_SMALL_THRESHOLD = 10;
 const FMT_SMALL_DECIMALS  = 4;
 const FMT_LARGE_DECIMALS  = 2;
+// Category name used to select which outputs appear on the Plotting tab
+const PLOT_CATEGORY = "plot";
 
 // ============================================================
 // Tab switching (custom – Bootstrap plugin not used here)
@@ -741,6 +786,19 @@ function switchTab(clickedBtn, paneId) {
   // Show target pane
   const pane = document.getElementById(paneId);
   if (pane) { pane.classList.add('show', 'active'); }
+}
+
+// ============================================================
+// Dashboard hide/show toggle
+// ============================================================
+function toggleDashboard() {
+  const panel     = document.querySelector('.fnx-right');
+  const btnToggle = document.getElementById('btn-toggle-panel');
+  const btnReopen = document.getElementById('btn-panel-reopen');
+  const collapsed = panel.classList.toggle('fnx-right-collapsed');
+  if (btnToggle) btnToggle.textContent = collapsed ? '▶' : '◀';
+  if (btnToggle) btnToggle.title = collapsed ? 'Show Dashboard' : 'Hide Dashboard';
+  if (btnReopen) btnReopen.style.display = collapsed ? '' : 'none';
 }
 
 // ============================================================
@@ -804,6 +862,9 @@ let currentOutputs  = {};
 let statusPollTimer = null;
 let _vizPropertyOptions  = [];
 let _vizColormapOptions  = [];
+// KPI bar – input keys discovered from loaded input definitions
+let _itLoadKey      = null;
+let _ambientTempKey = null;
 
 // ============================================================
 // Boot
@@ -873,6 +934,32 @@ async function loadInputs(kind) {
     return;
   }
   container.innerHTML = buildInputsHtml(inputs, kind);
+
+  // Detect IT Load and Ambient Temp keys for the KPI bar (search all input kinds)
+  _detectKpiInputKeys(inputs);
+}
+
+// Scan input definitions to discover which key maps to IT Load and Ambient Temp.
+// Matches descriptions/keys that contain "IT" as a whole word or prefix followed by
+// "load" or "heat" (e.g. "IT Heat Load", "IT_HEAT_LOAD") to avoid false positives
+// like "Inhibit" or "Bit".
+function _detectKpiInputKeys(inputs) {
+  for (const inp of inputs) {
+    const desc = (inp.description || inp.key || "").toLowerCase();
+    const key  = (inp.key || "").toLowerCase();
+    // IT Load: description/key starts with "it " / "it_" or contains " it " / "_it_"
+    const isItToken = /(?:^|[\s_])it(?:[\s_]|$)/.test(desc) ||
+                      /(?:^|_)it(?:_|$)/.test(key);
+    if (!_itLoadKey && isItToken &&
+        (desc.includes("load") || desc.includes("heat") ||
+         key.includes("load")  || key.includes("heat"))) {
+      _itLoadKey = inp.key;
+    }
+    if (!_ambientTempKey &&
+        (desc.includes("ambient") || key.includes("ambient"))) {
+      _ambientTempKey = inp.key;
+    }
+  }
 }
 
 function buildInputsHtml(inputs, kind) {
@@ -1015,9 +1102,10 @@ function renderResultsTable() {
 }
 
 // ============================================================
-// Bottom Metrics Bar
+// Bottom KPI Bar
 // ============================================================
 function updateMetricsBar(s) {
+  // SIM STATUS
   const el = document.getElementById("metric-status");
   if (s.transientRunning) {
     el.textContent = "RUNNING";   el.className = "metric-val running";
@@ -1029,22 +1117,19 @@ function updateMetricsBar(s) {
     el.textContent = "OFFLINE";   el.className = "metric-val offline";
   }
 
-  const out     = document.getElementById("metrics-outputs");
-  const entries = Object.entries(s.outputs || {}).slice(0, 4);
-  if (!entries.length) { out.innerHTML = ""; return; }
+  // IT LOAD – from current input values (changes only when inputs change)
+  const inputVals = s.inputValues || {};
+  const itVal  = _itLoadKey     ? inputVals[_itLoadKey]     : undefined;
+  const ambVal = _ambientTempKey ? inputVals[_ambientTempKey] : undefined;
+  document.getElementById("kpi-it-load").textContent =
+    itVal  !== undefined && itVal  !== null ? fmtVal(itVal)  : "N/A";
+  document.getElementById("kpi-ambient").textContent =
+    ambVal !== undefined && ambVal !== null ? fmtVal(ambVal) : "N/A";
 
-  const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
-  out.innerHTML = entries.map(([k, v]) => {
-    const def  = defMap[k] || {};
-    const lbl  = (def.description || k).toUpperCase().slice(0, 16);
-    const unit = def.unit ? ` ${def.unit}` : "";
-    return `
-      <div class="fnx-metric-sep"></div>
-      <div class="fnx-metric">
-        <span class="metric-label">${esc(lbl)}</span>
-        <span class="metric-val">${fmtVal(v)}${esc(unit)}</span>
-      </div>`;
-  }).join("");
+  // PUE – from current simulation outputs (updates every status poll)
+  const pueVal = (s.outputs || {})["PUE"];
+  document.getElementById("kpi-pue").textContent =
+    pueVal !== undefined && pueVal !== null ? fmtVal(pueVal) : "N/A";
 }
 
 // ============================================================
@@ -1198,7 +1283,13 @@ let _plotAutoTimer = null;
 function buildPlotYCheckboxes() {
   const container = document.getElementById("plot-y-checkboxes");
   if (!outputDefs || !outputDefs.length) return;
-  container.innerHTML = outputDefs.map(o => {
+  // Only show outputs that belong to the "plot" category (case-insensitive)
+  const plotDefs = outputDefs.filter(o => (o.category || "").toLowerCase() === PLOT_CATEGORY);
+  if (!plotDefs.length) {
+    container.innerHTML = `<p class="text-muted small">No outputs with category "${esc(PLOT_CATEGORY)}" defined.</p>`;
+    return;
+  }
+  container.innerHTML = plotDefs.map(o => {
     const uid = `plot-y-${o.key}`;
     const lbl = o.description ? `${esc(o.description)} [${esc(o.unit || o.key)}]` : esc(o.key);
     return `

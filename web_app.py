@@ -80,6 +80,11 @@ class _SimState:
             "manual_max":     None,
         }
 
+        # Tracks the most-recently applied value for every input key so the
+        # web UI can show current IT Load / Ambient Temp / etc. in the KPI bar.
+        self.input_values: Dict[str, Any] = {}
+        self._load_input_defaults()
+
         # Called after every output fetch; set by extension.py.
         # Signature: on_outputs_ready(output_values: dict, fnx_outputs: list)
         self.on_outputs_ready: Optional[Callable] = None
@@ -87,6 +92,19 @@ class _SimState:
         # Omniverse asyncio event loop; set by extension.py so Flask handlers
         # can schedule USD-mutating operations on the main thread.
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    # ------------------------------------------------------------------
+    # Input default values helper
+    # ------------------------------------------------------------------
+
+    def _load_input_defaults(self) -> None:
+        """Initialise ``input_values`` with the default value of every input definition.
+        Existing user-set values are preserved (not overwritten)."""
+        for kind in (self.io.LoadDynamicInputs(), self.io.LoadStaticInputs()):
+            if kind:
+                for inp in kind:
+                    if inp.Key not in self.input_values:
+                        self.input_values[inp.Key] = inp.DefaultValue
 
     # ------------------------------------------------------------------
     # Logging
@@ -299,6 +317,7 @@ class _SimState:
                     inp.PropertyIdentifier,
                     str(inp.DefaultValue),
                 )
+            self.input_values[inp.Key] = inp.DefaultValue
 
     # ------------------------------------------------------------------
     # Individual input update
@@ -331,6 +350,8 @@ class _SimState:
                     str(value),
                 )
 
+            # Always track the new value so the KPI bar stays current
+            self.input_values[key] = value
             if self.io.Setup.SolveOnChange:
                 return self.run_steady_state(load_defaults=False)
             return {"ok": True, "message": f"Set {key} = {value}"}
@@ -424,6 +445,7 @@ def set_config():
     if "ResultPollingInterval" in data: s.ResultPollingInterval = str(data["ResultPollingInterval"])
     _state.io.Save()
     _state.io = FlownexIO()  # reload from disk
+    _state._load_input_defaults()  # refresh KPI input values from new config
     return jsonify({"ok": True})
 
 
@@ -486,6 +508,7 @@ def sim_status():
         "flownexAvailable":  _state.api.IsFnxAvailable(),
         "connected":         _state.api.AttachedProject is not None,
         "outputs":           dict(_state.output_values),
+        "inputValues":       dict(_state.input_values),
         "log":               _state.get_log()[-50:],
     })
 
