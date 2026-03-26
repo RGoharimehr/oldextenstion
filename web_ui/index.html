@@ -404,6 +404,7 @@
     .text-danger  { color: var(--red)      !important; }
     .text-warning { color: var(--yellow)   !important; }
     .text-muted   { color: var(--gray)     !important; }
+    #sim-feedback { min-height: 1.2em; }
     h6 { color: var(--green) !important; font-weight: 700 !important; }
     code {
       background: rgba(134,239,71,0.1); color: var(--green);
@@ -506,6 +507,7 @@
             <button id="btn-steady-state" class="btn btn-secondary"
               onclick="runSteadyState(false)">⚙ Solve Steady State</button>
           </div>
+          <div id="sim-feedback" class="small mt-1"></div>
         </div>
         <div class="fnx-section">
           <div class="fnx-section-title">Live Output Values</div>
@@ -1253,11 +1255,29 @@ function logMapping(msg) {
 // Simulation control
 // ============================================================
 async function startTransient() {
-  showToast(await api("POST", "/api/simulation/start-transient"));
+  const btn  = document.getElementById("btn-start-transient");
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = "⏳ Starting…";
+  const res = await api("POST", "/api/simulation/start-transient");
+  showToast(res || { ok: false, message: "No response from server." });
+  if (!res || !res.ok) {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
 }
 
 async function stopTransient() {
-  showToast(await api("POST", "/api/simulation/stop-transient"));
+  const btn  = document.getElementById("btn-stop-transient");
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = "⏳ Stopping…";
+  const res = await api("POST", "/api/simulation/stop-transient");
+  showToast(res || { ok: false, message: "No response from server." });
+  if (!res || !res.ok) {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
 }
 
 async function runSteadyState(loadDefaults) {
@@ -1434,12 +1454,15 @@ function flash(id) {
 
 function showToast(res) {
   if (!res) return;
-  const logArea = document.getElementById("log-area");
-  const div     = document.createElement("div");
-  div.className = res.ok ? "text-ok" : "text-err";
-  div.textContent = (res.ok ? "✅ " : "❌ ") + (res.message || (res.ok ? "OK" : "Error"));
-  logArea.appendChild(div);
-  logArea.scrollTop = logArea.scrollHeight;
+  const el = document.getElementById("sim-feedback");
+  if (!el) return;
+  el.className   = "small mt-1 " + (res.ok ? "text-ok" : "text-err");
+  el.textContent = (res.ok ? "✅ " : "❌ ") + (res.message || (res.ok ? "OK" : "Error"));
+  clearTimeout(showToast._tid);
+  showToast._tid = setTimeout(() => {
+    el.textContent = "";
+    el.className   = "small mt-1";
+  }, 5000);
 }
 </script>
 </body>
