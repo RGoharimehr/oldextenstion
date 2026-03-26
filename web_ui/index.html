@@ -155,7 +155,7 @@
     }
     #btn-panel-reopen:hover { color: var(--green); }
 
-    /* Panel header row: title + BRIDGE / START */
+    /* Panel header row */
     .fnx-panel-head {
       padding: 9px 12px;
       background: rgba(12,12,12,0.9);
@@ -169,33 +169,14 @@
     }
     .head-btns { display: flex; gap: 6px; align-items: center; }
 
-    /* Mode row (SIMULATE active | STEADY STATE | STOP) */
-    .fnx-mode-row {
-      display: flex; gap: 3px; padding: 6px 8px;
-      background: rgba(15,15,15,0.7);
+    /* Simulation control row (below tab nav, always visible) */
+    .fnx-sim-row {
+      display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px;
+      background: rgba(12,12,12,0.75);
       border-bottom: 1px solid rgba(89,89,89,0.18);
       flex-shrink: 0;
     }
-    .fnx-mode-btn {
-      flex: 1; padding: 5px 4px; font-size: 10px; font-weight: 700;
-      border-radius: 8px; border: 1px solid rgba(89,89,89,0.45);
-      background: rgba(40,40,40,0.6); color: var(--gray);
-      cursor: pointer; transition: all 0.2s; text-align: center;
-      white-space: nowrap; line-height: 1.3;
-    }
-    .fnx-mode-btn:hover:not(:disabled) {
-      background: rgba(70,70,70,0.6); color: var(--white);
-    }
-    .fnx-mode-btn.mode-active {
-      background: var(--green); color: #1a1a1a;
-      border-color: var(--green);
-      box-shadow: 0 0 10px rgba(134,239,71,0.4);
-    }
-    .fnx-mode-btn.mode-stop { color: var(--red); border-color: rgba(255,51,51,0.4); }
-    .fnx-mode-btn.mode-stop:hover:not(:disabled) {
-      background: rgba(255,51,51,0.15);
-    }
-    .fnx-mode-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+    .fnx-sim-row .btn { flex: 1 1 auto; white-space: nowrap; font-size: 10px !important; padding: 5px 8px !important; }
 
     /* Scrollable tab nav inside panel */
     .fnx-tabs-row {
@@ -485,26 +466,25 @@
   <!-- ── RIGHT CONTROL PANEL ── -->
   <div class="fnx-right">
 
-    <!-- Header: Dashboard Control + BRIDGE / START -->
+    <!-- Header: Dashboard Control + collapse toggle -->
     <div class="fnx-panel-head">
       <span class="fnx-panel-title">Dashboard Control</span>
       <div class="head-btns">
-        <button id="btn-load-defaults" class="btn btn-bridge"
-          onclick="runSteadyState(true)" title="Load Defaults &amp; Solve">BRIDGE</button>
-        <button id="btn-start-transient" class="btn btn-success btn-sm"
-          onclick="startTransient()">START</button>
         <button id="btn-toggle-panel" class="btn btn-outline-secondary btn-sm"
           onclick="toggleDashboard()" title="Hide Dashboard" style="padding:3px 7px!important;font-size:13px!important;">◀</button>
       </div>
     </div>
 
-    <!-- Mode row: SIMULATE (active label) | STEADY STATE | STOP -->
-    <div class="fnx-mode-row">
-      <div class="fnx-mode-btn mode-active">SIMULATE</div>
-      <button id="btn-steady-state" class="fnx-mode-btn"
-        onclick="runSteadyState(false)">STEADY STATE</button>
-      <button id="btn-stop-transient" class="fnx-mode-btn mode-stop"
-        onclick="stopTransient()" disabled>STOP</button>
+    <!-- Simulation control buttons (always visible, below the header) -->
+    <div class="fnx-sim-row">
+      <button id="btn-start-transient" class="btn btn-success"
+        onclick="startTransient()">▶ Start Transient</button>
+      <button id="btn-stop-transient" class="btn btn-danger"
+        onclick="stopTransient()" disabled>⏹ Stop Transient</button>
+      <button id="btn-load-defaults" class="btn btn-bridge"
+        onclick="runSteadyState(true)">⚡ Load Defaults &amp; Solve</button>
+      <button id="btn-steady-state" class="btn btn-secondary"
+        onclick="runSteadyState(false)">⚙ Solve Steady State</button>
     </div>
 
     <!-- Tab nav (scrollable pill bar) -->
@@ -798,7 +778,7 @@ function toggleDashboard() {
   const collapsed = panel.classList.toggle('fnx-right-collapsed');
   if (btnToggle) btnToggle.textContent = collapsed ? '▶' : '◀';
   if (btnToggle) btnToggle.title = collapsed ? 'Show Dashboard' : 'Hide Dashboard';
-  if (btnReopen) btnReopen.style.display = collapsed ? '' : 'none';
+  if (btnReopen) btnReopen.style.display = collapsed ? 'block' : 'none';
 }
 
 // ============================================================
