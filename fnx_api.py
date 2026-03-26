@@ -73,8 +73,20 @@ class FNXApi:
             self.CloseProject()
 
         if self.AttachedProject is not None:
-            print("Flownex already attached")
-            return            
+            # Verify the COM connection is still alive (Flownex may have been closed
+            # since we last attached, leaving a stale reference that throws
+            # 0x800706BA "RPC server is unavailable" on the next COM call).
+            try:
+                _ = self.AttachedProject.ProjectRootPath  # lightweight ping
+                print("Flownex already attached")
+                return
+            except Exception:
+                print("Flownex connection lost – reconnecting...")
+                self.AttachedProject = None
+                self.FlownexSE = None
+                self.SimulationController = None
+                self.NetworkBuilder = None
+                self._property_cache.clear()
 
         if not os.path.isfile(projectPath):
             print("Flownex project file not found: " + projectPath)
