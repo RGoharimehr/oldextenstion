@@ -3,751 +3,716 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Flownex Web Interface</title>
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    rel="stylesheet" crossorigin="anonymous"
-  />
+  <title>Flownex Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
     crossorigin="anonymous"></script>
   <style>
     /* ================================================================
-       FLOWNEX DASHBOARD – Dark Glassmorphic Engineering Theme
-       Color system:
-         Main bg    #1a1a1a   Panel bg  #2d2d2d   Card bg   #363636
-         Green      #86ef47   Blue      #0050e0
-         Text       #ffffff   Muted     #b0b0b0   Border    #595959
-         OK green   #33ff33   Error red #ff3333   Warning   #ffcc00
+       FLOWNEX – Dark Glassmorphic Engineering Dashboard
+       Reference palette:
+         bg #1a1a1a  panel #2d2d2d  card #363636
+         green #86ef47  blue #0050e0
+         text #fff  muted #b0b0b0  border #595959
+         ok #33ff33  err #ff3333  warn #ffcc00
     ================================================================ */
-
     :root {
-      --bg-main:     #1a1a1a;
-      --bg-panel:    #2d2d2d;
-      --bg-card:     #363636;
-      --green:       #86ef47;
-      --green-ok:    #33ff33;
-      --blue:        #0050e0;
-      --text-white:  #ffffff;
-      --text-gray:   #b0b0b0;
-      --border:      #595959;
-      --red:         #ff3333;
-      --yellow:      #ffcc00;
-      --radius-btn:  10px;
-      --radius-card: 12px;
-      --radius-panel:14px;
+      --bg:       #1a1a1a;
+      --panel:    #2d2d2d;
+      --card:     #363636;
+      --green:    #86ef47;
+      --green-ok: #33ff33;
+      --blue:     #0050e0;
+      --white:    #ffffff;
+      --gray:     #b0b0b0;
+      --border:   #595959;
+      --red:      #ff3333;
+      --yellow:   #ffcc00;
+      --nav-h:    46px;
+      --bar-h:    42px;
+      --right-w:  336px;
+      --left-w:   66px;
     }
-
     *, *::before, *::after { box-sizing: border-box; }
-
     html, body {
-      height: 100%;
-      background: var(--bg-main);
-      color: var(--text-white);
+      height: 100%; width: 100%; overflow: hidden;
+      background: var(--bg); color: var(--white);
       font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      font-size: 13px;
-      margin: 0;
+      font-size: 13px; margin: 0;
     }
-
-    /* ---- Scrollbar ---- */
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #595959; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
 
-    /* ---- Navbar ---- */
-    .fnx-navbar {
-      background: rgba(18, 18, 18, 0.92);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-bottom: 1px solid rgba(89,89,89,0.35);
-      padding: 10px 18px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 200;
+    /* ── TOP NAVBAR ── */
+    .fnx-nav {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
+      background: rgba(12,12,12,0.96);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(89,89,89,0.3);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; z-index: 400;
     }
     .fnx-brand {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-white);
-      letter-spacing: 0.5px;
+      font-size: 14px; font-weight: 700; color: var(--white); letter-spacing: 0.3px;
     }
     .fnx-brand .accent { color: var(--green); }
+    .fnx-brand .sub { font-size: 10px; color: var(--gray); font-weight: 400; margin-left: 6px; }
 
-    /* ---- Tab nav pill bar ---- */
-    .fnx-tab-bar {
-      display: flex;
-      gap: 3px;
-      flex-wrap: wrap;
-      background: rgba(45,45,45,0.65);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border-radius: var(--radius-panel);
-      padding: 5px 6px;
-      margin-bottom: 16px;
-      border: 1px solid rgba(89,89,89,0.3);
+    /* ── MAIN LAYOUT ── */
+    .fnx-layout {
+      position: fixed;
+      top: var(--nav-h); bottom: var(--bar-h); left: 0; right: 0;
+      display: flex; overflow: hidden;
     }
-    .fnx-tab-bar .nav-link {
-      color: var(--text-gray);
-      background: transparent;
-      border: none !important;
-      border-radius: var(--radius-btn);
-      padding: 6px 14px;
-      font-size: 12px;
-      font-weight: 600;
-      transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-      cursor: pointer;
-      white-space: nowrap;
-      outline: none;
+
+    /* ── LEFT COLORBAR ── */
+    .fnx-colorbar {
+      width: var(--left-w); flex-shrink: 0;
+      background: rgba(20,20,20,0.88);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-right: 1px solid rgba(89,89,89,0.22);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 10px 6px; gap: 4px;
     }
-    .fnx-tab-bar .nav-link:hover {
-      background: rgba(89,89,89,0.35);
-      color: var(--text-white);
+    .cbar-icon {
+      font-size: 15px; color: var(--gray); cursor: pointer;
+      transition: color 0.2s; margin-bottom: 4px;
     }
-    .fnx-tab-bar .nav-link.active {
-      background: var(--blue) !important;
-      color: #ffffff !important;
-      box-shadow: 0 0 14px rgba(0,80,224,0.45);
+    .cbar-icon:hover { color: var(--green); }
+    .cbar-lbl {
+      font-size: 9px; font-weight: 700; color: var(--gray);
+      text-align: center; line-height: 1.2; word-break: break-all;
     }
-    /* Hide Bootstrap's default tab borders */
+    .cbar-gradient {
+      flex: 1; width: 16px; border-radius: 8px;
+      background: linear-gradient(to bottom,
+        #ff0000 0%, #ff7700 17%, #ffff00 33%,
+        #00ff00 50%, #00ccff 67%, #0000ff 83%, #8b00ff 100%);
+      box-shadow: 0 0 10px rgba(0,0,0,0.6);
+      margin: 4px 0; min-height: 80px;
+    }
+
+    /* ── CENTER AREA ── */
+    .fnx-center {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden; position: relative; min-width: 0;
+    }
+
+    /* Floating "Live Metrics" mini panel – top-left of center */
+    .fnx-live-panel {
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(22,22,22,0.82);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(89,89,89,0.28);
+      border-radius: 10px; padding: 10px 12px;
+      min-width: 170px; max-width: 260px; z-index: 20;
+    }
+    .live-panel-title {
+      font-size: 10px; font-weight: 700; color: var(--gray);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 7px;
+    }
+    .live-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+    .live-key { font-size: 10px; color: var(--gray); }
+    .live-val { font-size: 10px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
+
+    /* Main chart canvas fill */
+    .fnx-chart-wrap {
+      flex: 1; position: relative; display: flex;
+      align-items: center; justify-content: center; padding: 14px;
+    }
+    #plot-canvas { width: 100% !important; height: 100% !important; }
+    #plot-no-data {
+      position: absolute; color: var(--gray); font-size: 13px;
+      text-align: center; pointer-events: none; margin: 0;
+    }
+
+    /* ── RIGHT CONTROL PANEL ── */
+    .fnx-right {
+      width: var(--right-w); flex-shrink: 0;
+      background: rgba(20,20,20,0.92);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border-left: 1px solid rgba(89,89,89,0.28);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* Panel header row: title + BRIDGE / START */
+    .fnx-panel-head {
+      padding: 9px 12px;
+      background: rgba(12,12,12,0.9);
+      border-bottom: 1px solid rgba(89,89,89,0.22);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .fnx-panel-title {
+      font-size: 10px; font-weight: 700; color: var(--gray);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .head-btns { display: flex; gap: 6px; align-items: center; }
+
+    /* Mode row (SIMULATE active | STEADY STATE | STOP) */
+    .fnx-mode-row {
+      display: flex; gap: 3px; padding: 6px 8px;
+      background: rgba(15,15,15,0.7);
+      border-bottom: 1px solid rgba(89,89,89,0.18);
+      flex-shrink: 0;
+    }
+    .fnx-mode-btn {
+      flex: 1; padding: 5px 4px; font-size: 10px; font-weight: 700;
+      border-radius: 8px; border: 1px solid rgba(89,89,89,0.45);
+      background: rgba(40,40,40,0.6); color: var(--gray);
+      cursor: pointer; transition: all 0.2s; text-align: center;
+      white-space: nowrap; line-height: 1.3;
+    }
+    .fnx-mode-btn:hover:not(:disabled) {
+      background: rgba(70,70,70,0.6); color: var(--white);
+    }
+    .fnx-mode-btn.mode-active {
+      background: var(--green); color: #1a1a1a;
+      border-color: var(--green);
+      box-shadow: 0 0 10px rgba(134,239,71,0.4);
+    }
+    .fnx-mode-btn.mode-stop { color: var(--red); border-color: rgba(255,51,51,0.4); }
+    .fnx-mode-btn.mode-stop:hover:not(:disabled) {
+      background: rgba(255,51,51,0.15);
+    }
+    .fnx-mode-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+
+    /* Scrollable tab nav inside panel */
+    .fnx-tabs-row {
+      display: flex; gap: 2px; padding: 5px 7px;
+      overflow-x: auto; flex-shrink: 0;
+      background: rgba(14,14,14,0.75);
+      border-bottom: 1px solid rgba(89,89,89,0.18);
+      scrollbar-width: none;
+    }
+    .fnx-tabs-row::-webkit-scrollbar { display: none; }
+    .fnx-tab-btn {
+      padding: 4px 9px; font-size: 10px; font-weight: 600;
+      border-radius: 7px; border: none;
+      background: transparent; color: var(--gray);
+      cursor: pointer; white-space: nowrap;
+      transition: all 0.2s; text-decoration: none; display: inline-block;
+    }
+    .fnx-tab-btn:hover { background: rgba(89,89,89,0.3); color: var(--white); }
+    .fnx-tab-btn.active {
+      background: var(--blue) !important; color: #fff !important;
+      box-shadow: 0 0 10px rgba(0,80,224,0.4);
+    }
     .nav-tabs { border-bottom: none !important; }
 
-    /* ---- Cards / Panels ---- */
-    .card {
-      background: rgba(45,45,45,0.72) !important;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(89,89,89,0.3) !important;
-      border-radius: var(--radius-card) !important;
-      box-shadow: 0 4px 28px rgba(0,0,0,0.45);
-      overflow: hidden;
-    }
-    .card-header {
-      background: rgba(20, 20, 20, 0.82) !important;
-      border-bottom: 1px solid rgba(89,89,89,0.3) !important;
-      padding: 10px 16px !important;
-      font-size: 13px !important;
-      font-weight: 700 !important;
-      color: var(--green) !important;
-    }
-    .card-body { padding: 14px 16px; }
-    .card-body.p-0 { padding: 0 !important; }
-    .card-body.p-2 { padding: 8px !important; }
+    /* Tab content scrollable area */
+    .fnx-tab-content { flex: 1; overflow-y: auto; padding: 10px; }
 
-    /* ---- Buttons ---- */
+    /* Sections inside tabs */
+    .fnx-section { margin-bottom: 12px; }
+    .fnx-section-title {
+      font-size: 10px; font-weight: 700; color: var(--green);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 7px; padding-bottom: 4px;
+      border-bottom: 1px solid rgba(134,239,71,0.18);
+    }
+
+    /* ── BOTTOM METRICS BAR ── */
+    .fnx-metrics-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; height: var(--bar-h);
+      background: rgba(10,10,10,0.96);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid rgba(89,89,89,0.28);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 400; padding: 0 16px; gap: 0; overflow: hidden;
+    }
+    .fnx-metric { display: flex; align-items: center; gap: 5px; padding: 0 12px; }
+    .fnx-metric-sep { width: 1px; height: 16px; background: rgba(89,89,89,0.45); flex-shrink: 0; }
+    .metric-label { font-size: 9px; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: 0.4px; }
+    .metric-val { font-size: 12px; font-weight: 700; color: var(--white); font-variant-numeric: tabular-nums; }
+    .metric-val.running { color: var(--green); }
+    .metric-val.ready   { color: var(--yellow); }
+    .metric-val.offline { color: var(--red); }
+    .metric-val.connected { color: var(--blue); }
+
+    /* ── BUTTONS ── */
     .btn {
-      border-radius: var(--radius-btn) !important;
-      font-size: 12px !important;
-      font-weight: 600 !important;
-      padding: 6px 14px !important;
-      transition: all 0.2s ease !important;
-      border: 1px solid transparent !important;
+      border-radius: 10px !important; font-size: 11px !important;
+      font-weight: 700 !important; padding: 5px 11px !important;
+      transition: all 0.2s ease !important; border: 1px solid transparent !important;
+      letter-spacing: 0.2px;
     }
     .btn:active:not(:disabled) { transform: translateY(1px); }
-    .btn:disabled { opacity: 0.38 !important; cursor: not-allowed !important; }
+    .btn:disabled { opacity: 0.33 !important; cursor: not-allowed !important; }
 
     .btn-success {
-      background: var(--green) !important;
-      color: #1a1a1a !important;
+      background: var(--green) !important; color: #1a1a1a !important;
       border-color: var(--green) !important;
     }
     .btn-success:hover:not(:disabled) {
       background: #a0ff62 !important;
-      box-shadow: 0 0 14px rgba(134,239,71,0.5) !important;
+      box-shadow: 0 0 12px rgba(134,239,71,0.5) !important;
     }
     .btn-danger {
-      background: rgba(255,51,51,0.12) !important;
-      color: var(--red) !important;
-      border-color: rgba(255,51,51,0.45) !important;
+      background: rgba(255,51,51,0.1) !important; color: var(--red) !important;
+      border-color: rgba(255,51,51,0.5) !important;
     }
     .btn-danger:hover:not(:disabled) {
-      background: rgba(255,51,51,0.25) !important;
-      box-shadow: 0 0 10px rgba(255,51,51,0.35) !important;
+      background: rgba(255,51,51,0.22) !important;
+      box-shadow: 0 0 8px rgba(255,51,51,0.3) !important;
     }
     .btn-primary {
-      background: var(--blue) !important;
-      color: #ffffff !important;
+      background: var(--blue) !important; color: #fff !important;
       border-color: var(--blue) !important;
     }
     .btn-primary:hover:not(:disabled) {
       background: #1a6aff !important;
-      box-shadow: 0 0 14px rgba(0,80,224,0.5) !important;
+      box-shadow: 0 0 12px rgba(0,80,224,0.5) !important;
     }
     .btn-secondary {
-      background: rgba(89,89,89,0.25) !important;
-      color: var(--text-gray) !important;
+      background: rgba(89,89,89,0.2) !important; color: var(--gray) !important;
       border-color: var(--border) !important;
     }
     .btn-secondary:hover:not(:disabled) {
-      background: rgba(89,89,89,0.45) !important;
-      color: var(--text-white) !important;
+      background: rgba(89,89,89,0.4) !important; color: var(--white) !important;
     }
     .btn-outline-secondary {
-      background: transparent !important;
-      color: var(--text-gray) !important;
+      background: transparent !important; color: var(--gray) !important;
       border-color: var(--border) !important;
     }
     .btn-outline-secondary:hover:not(:disabled) {
-      background: rgba(89,89,89,0.3) !important;
-      color: var(--text-white) !important;
+      background: rgba(89,89,89,0.3) !important; color: var(--white) !important;
     }
     .btn-outline-light {
-      background: transparent !important;
-      color: var(--text-gray) !important;
-      border-color: rgba(255,255,255,0.18) !important;
+      background: transparent !important; color: var(--gray) !important;
+      border-color: rgba(255,255,255,0.15) !important;
     }
     .btn-outline-light:hover:not(:disabled) {
-      background: rgba(255,255,255,0.08) !important;
-      color: var(--text-white) !important;
+      background: rgba(255,255,255,0.07) !important; color: var(--white) !important;
+    }
+    /* BRIDGE – red outline, matches reference */
+    .btn-bridge {
+      background: transparent !important; color: var(--red) !important;
+      border: 1px solid var(--red) !important; border-radius: 20px !important;
+      font-size: 10px !important; padding: 4px 10px !important;
+    }
+    .btn-bridge:hover:not(:disabled) {
+      background: rgba(255,51,51,0.12) !important;
     }
 
-    /* ---- Form controls ---- */
+    /* ── FORM CONTROLS ── */
     label.form-label {
-      font-size: 11px !important;
-      color: var(--text-gray) !important;
-      margin-bottom: 4px !important;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
+      font-size: 10px !important; color: var(--gray) !important;
+      margin-bottom: 3px !important; text-transform: uppercase; letter-spacing: 0.4px;
+      display: block;
     }
     .form-control, .form-select {
-      background: rgba(18,18,18,0.72) !important;
-      color: var(--text-white) !important;
-      border: 1px solid var(--border) !important;
-      border-radius: var(--radius-btn) !important;
-      font-size: 13px !important;
+      background: rgba(12,12,12,0.75) !important; color: var(--white) !important;
+      border: 1px solid var(--border) !important; border-radius: 8px !important;
+      font-size: 12px !important;
       transition: border-color 0.2s, box-shadow 0.2s !important;
     }
     .form-control:focus, .form-select:focus {
-      background: rgba(18,18,18,0.88) !important;
-      color: var(--text-white) !important;
+      background: rgba(12,12,12,0.9) !important; color: var(--white) !important;
       border-color: var(--green) !important;
-      box-shadow: 0 0 0 2px rgba(134,239,71,0.2) !important;
-      outline: none !important;
+      box-shadow: 0 0 0 2px rgba(134,239,71,0.18) !important; outline: none !important;
     }
     .form-control[readonly] {
-      background: rgba(18,18,18,0.4) !important;
-      color: var(--text-gray) !important;
+      background: rgba(12,12,12,0.4) !important; color: var(--gray) !important;
     }
-    .form-select option { background: #2d2d2d; color: var(--text-white); }
+    .form-select option { background: #2d2d2d; color: var(--white); }
 
-    /* ---- Checkboxes ---- */
+    /* Checkboxes */
     .form-check-input {
-      background-color: rgba(18,18,18,0.7) !important;
-      border-color: var(--border) !important;
-      border-radius: 3px !important;
+      background-color: rgba(12,12,12,0.75) !important;
+      border-color: var(--border) !important; border-radius: 3px !important;
     }
     .form-check-input:checked {
-      background-color: var(--green) !important;
-      border-color: var(--green) !important;
+      background-color: var(--green) !important; border-color: var(--green) !important;
     }
-    .form-check-input:focus {
-      box-shadow: 0 0 0 2px rgba(134,239,71,0.25) !important;
-    }
-    .form-check-label {
-      color: var(--text-gray) !important;
-      font-size: 12px !important;
-    }
+    .form-check-input:focus { box-shadow: 0 0 0 2px rgba(134,239,71,0.2) !important; }
+    .form-check-label { color: var(--gray) !important; font-size: 11px !important; }
 
-    /* ---- Range slider ---- */
+    /* Range sliders */
     .form-range {
-      -webkit-appearance: none;
-      height: 4px;
-      border-radius: 2px;
-      background: rgba(89,89,89,0.45);
-      cursor: pointer;
-      padding: 0;
+      -webkit-appearance: none; height: 3px;
+      background: rgba(89,89,89,0.4); border-radius: 2px; cursor: pointer;
     }
     .form-range::-webkit-slider-runnable-track {
-      height: 4px;
-      border-radius: 2px;
-      background: rgba(89,89,89,0.45);
+      height: 3px; background: rgba(89,89,89,0.4); border-radius: 2px;
     }
     .form-range::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: var(--green);
-      margin-top: -5px;
-      box-shadow: 0 0 7px rgba(134,239,71,0.65);
-      cursor: pointer;
-      transition: box-shadow 0.2s;
+      -webkit-appearance: none; width: 13px; height: 13px;
+      border-radius: 50%; background: var(--green);
+      margin-top: -5px; box-shadow: 0 0 6px rgba(134,239,71,0.6);
+      cursor: pointer; transition: box-shadow 0.2s;
     }
-    .form-range::-webkit-slider-thumb:hover {
-      box-shadow: 0 0 12px rgba(134,239,71,0.9);
-    }
+    .form-range::-webkit-slider-thumb:hover { box-shadow: 0 0 10px rgba(134,239,71,0.9); }
     .form-range::-moz-range-thumb {
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: var(--green);
-      border: none;
-      cursor: pointer;
+      width: 13px; height: 13px; border-radius: 50%;
+      background: var(--green); border: none; cursor: pointer;
     }
     .form-range::-moz-range-track {
-      height: 4px;
-      border-radius: 2px;
-      background: rgba(89,89,89,0.45);
+      height: 3px; background: rgba(89,89,89,0.4); border-radius: 2px;
     }
     .slider-label {
-      min-width: 56px;
-      text-align: right;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--green);
-      font-variant-numeric: tabular-nums;
+      min-width: 48px; text-align: right; font-size: 11px;
+      font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums;
     }
 
-    /* ---- Tables ---- */
-    .table {
-      color: var(--text-white) !important;
-      font-size: 12px !important;
-      margin-bottom: 0 !important;
-    }
+    /* ── TABLES ── */
+    .table { color: var(--white) !important; font-size: 11px !important; margin-bottom: 0 !important; }
     .table thead th {
-      background: rgba(18,18,18,0.82) !important;
-      color: var(--text-gray) !important;
-      font-size: 11px !important;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      border-bottom: 1px solid rgba(89,89,89,0.35) !important;
-      padding: 8px 12px !important;
+      background: rgba(10,10,10,0.9) !important; color: var(--gray) !important;
+      font-size: 9px !important; text-transform: uppercase; letter-spacing: 0.4px;
+      border-bottom: 1px solid rgba(89,89,89,0.28) !important;
+      padding: 6px 8px !important; white-space: nowrap;
     }
     .table tbody td {
-      border-bottom: 1px solid rgba(89,89,89,0.18) !important;
-      padding: 7px 12px !important;
-      background: transparent !important;
+      border-bottom: 1px solid rgba(89,89,89,0.12) !important;
+      padding: 5px 8px !important; background: transparent !important;
     }
-    .table-hover tbody tr:hover td {
-      background: rgba(134,239,71,0.05) !important;
-    }
+    .table-hover tbody tr:hover td { background: rgba(134,239,71,0.04) !important; }
     .table-dark { --bs-table-bg: transparent !important; }
+    .fnx-table-wrap { overflow-x: auto; border-radius: 7px; }
 
-    /* ---- Log areas ---- */
+    /* ── LOG ── */
     #log-area, #mapping-log {
-      font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
-      font-size: 11px;
-      line-height: 1.55;
-      max-height: 180px;
-      overflow-y: auto;
-      background: rgba(8,8,8,0.7);
-      border: 1px solid rgba(89,89,89,0.3);
-      border-radius: 8px;
-      padding: 8px 10px;
-      color: var(--text-gray);
+      font-family: 'Cascadia Code', Consolas, monospace;
+      font-size: 10px; line-height: 1.5; max-height: 110px; overflow-y: auto;
+      background: rgba(6,6,6,0.8);
+      border: 1px solid rgba(89,89,89,0.22); border-radius: 6px;
+      padding: 6px 8px; color: var(--gray);
     }
-    #mapping-log { max-height: 200px; min-height: 60px; }
+    #mapping-log { max-height: 130px; min-height: 36px; }
 
-    /* ---- Status badge ---- */
+    /* ── BADGES / STATUS ── */
     #status-badge {
-      font-size: 11px !important;
-      font-weight: 600 !important;
-      border-radius: 20px !important;
-      padding: 4px 12px !important;
-      letter-spacing: 0.3px;
+      font-size: 10px !important; font-weight: 700 !important;
+      border-radius: 20px !important; padding: 3px 10px !important;
     }
     .badge.bg-success   { background: var(--green) !important; color: #1a1a1a !important; }
-    .badge.bg-primary   { background: var(--blue)  !important; color: #ffffff !important; }
-    .badge.bg-secondary { background: rgba(89,89,89,0.35) !important; color: var(--text-gray) !important; border: 1px solid rgba(89,89,89,0.5) !important; }
-    .badge.bg-warning   { background: rgba(255,204,0,0.15) !important; color: var(--yellow) !important; border: 1px solid rgba(255,204,0,0.4) !important; }
-    .badge.bg-danger    { background: rgba(255,51,51,0.18)  !important; color: var(--red) !important; border: 1px solid rgba(255,51,51,0.4) !important; }
+    .badge.bg-primary   { background: var(--blue)  !important; color: #fff !important; }
+    .badge.bg-secondary { background: rgba(89,89,89,0.3) !important; color: var(--gray) !important; border: 1px solid rgba(89,89,89,0.45) !important; }
+    .badge.bg-warning   { background: rgba(255,204,0,0.12) !important; color: var(--yellow) !important; border: 1px solid rgba(255,204,0,0.35) !important; }
+    .badge.bg-danger    { background: rgba(255,51,51,0.12) !important; color: var(--red) !important; border: 1px solid rgba(255,51,51,0.35) !important; }
 
-    /* ---- Text utilities ---- */
+    /* ── TEXT UTILS ── */
     .text-ok      { color: var(--green-ok) !important; }
     .text-err     { color: var(--red)      !important; }
     .text-success { color: var(--green)    !important; }
     .text-danger  { color: var(--red)      !important; }
     .text-warning { color: var(--yellow)   !important; }
-    .text-muted   { color: var(--text-gray)!important; }
-
-    /* ---- Section headings ---- */
+    .text-muted   { color: var(--gray)     !important; }
     h6 { color: var(--green) !important; font-weight: 700 !important; }
-
-    /* ---- Inline code ---- */
     code {
-      background: rgba(134,239,71,0.1);
-      color: var(--green);
-      border-radius: 4px;
-      padding: 1px 5px;
-      font-size: 11px;
+      background: rgba(134,239,71,0.1); color: var(--green);
+      border-radius: 4px; padding: 1px 4px; font-size: 10px;
     }
-    strong { color: var(--text-white); }
-
-    /* ---- Plot ---- */
-    #plot-no-data { color: var(--text-gray) !important; }
-    .output-table td, .output-table th { font-size: 12px; }
-
-    /* ---- Chart card inner area ---- */
-    #plot-canvas { display: block; }
+    strong { color: var(--white); }
+    .output-table td, .output-table th { font-size: 11px; }
+    small { font-size: 10px; }
   </style>
 </head>
 <body>
 
-<!-- Navbar -->
-<nav class="navbar navbar-dark" style="background:#12141a;border-bottom:1px solid #333;">
-  <div class="container-fluid">
-    <span class="navbar-brand fw-bold">⚙ Flownex Web Interface</span>
-    <span id="status-badge" class="badge bg-secondary">Connecting…</span>
-  </div>
+<!-- ═══ TOP NAVBAR ═══ -->
+<nav class="fnx-nav">
+  <span class="fnx-brand">
+    ⚙ <span class="accent">Flownex</span>
+    <span class="sub">Dashboard</span>
+  </span>
+  <span id="status-badge" class="badge bg-secondary">Connecting…</span>
 </nav>
 
-<div class="container-fluid mt-3">
+<!-- ═══ MAIN LAYOUT ═══ -->
+<div class="fnx-layout">
 
-  <!-- Tab navigation -->
-  <ul class="nav nav-tabs mb-3" id="mainTabs">
-    <li class="nav-item"><a class="nav-link active"  data-bs-toggle="tab" href="#tab-operating">Operating Conditions</a></li>
-    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-geometry" >Geometrical Design</a></li>
-    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-results"  >Results</a></li>
-    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-plot"     >Plotting</a></li>
-    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-viz"      >Visualization</a></li>
-    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-mapping"  >Results Mapping</a></li>
-    <li class="nav-item"><a class="nav-link"         data-bs-toggle="tab" href="#tab-config"   >Configuration</a></li>
-  </ul>
+  <!-- ── LEFT COLORBAR ── -->
+  <div class="fnx-colorbar">
+    <div class="cbar-icon" title="Visualization Settings"
+      onclick="document.querySelector('[href=\'#tab-viz\']').click()">⚙</div>
+    <div class="cbar-lbl" id="cbar-max">—</div>
+    <div class="cbar-gradient" id="cbar-gradient"></div>
+    <div class="cbar-lbl" id="cbar-min">—</div>
+  </div>
 
-  <div class="tab-content">
+  <!-- ── CENTER AREA ── -->
+  <div class="fnx-center">
 
-    <!-- ============================================================
-         OPERATING CONDITIONS
-         ============================================================ -->
-    <div class="tab-pane fade show active" id="tab-operating">
-      <div class="row g-3">
-
-        <!-- Simulation control -->
-        <div class="col-12">
-          <div class="card">
-            <div class="card-header">Flownex Simulation Control</div>
-            <div class="card-body d-flex flex-wrap gap-2">
-              <button id="btn-start-transient" class="btn btn-success  btn-sm" onclick="startTransient()">▶ Start Transient</button>
-              <button id="btn-stop-transient"  class="btn btn-danger   btn-sm" onclick="stopTransient()"  disabled>⏹ Stop Transient</button>
-              <button id="btn-steady-state"    class="btn btn-primary  btn-sm" onclick="runSteadyState(false)">🔁 Solve Steady State</button>
-              <button id="btn-load-defaults"   class="btn btn-secondary btn-sm" onclick="runSteadyState(true)">⚙ Load Defaults &amp; Solve</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Dynamic inputs -->
-        <div class="col-lg-6">
-          <div class="card h-100">
-            <div class="card-header">Dynamic Inputs</div>
-            <div class="card-body" id="dynamic-inputs-container">
-              <p class="text-muted small">Loading…</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Live outputs -->
-        <div class="col-lg-6">
-          <div class="card h-100">
-            <div class="card-header">Live Output Values</div>
-            <div class="card-body p-0">
-              <table class="table table-sm table-dark table-hover mb-0 output-table">
-                <thead><tr><th>Key</th><th>Value</th><th>Unit</th></tr></thead>
-                <tbody id="live-outputs-body">
-                  <tr><td colspan="3" class="text-muted">No data yet</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- Log -->
-        <div class="col-12">
-          <div class="card">
-            <div class="card-header">Log</div>
-            <div class="card-body p-2"><div id="log-area"></div></div>
-          </div>
-        </div>
-
+    <!-- Floating live-metrics mini panel -->
+    <div class="fnx-live-panel">
+      <div class="live-panel-title">Live Metrics</div>
+      <div id="live-metrics-summary">
+        <span class="text-muted" style="font-size:10px">No data to plot.</span>
       </div>
     </div>
 
-    <!-- ============================================================
-         GEOMETRICAL DESIGN
-         ============================================================ -->
-    <div class="tab-pane fade" id="tab-geometry">
-      <div class="row g-3">
-        <div class="col-12">
-          <div class="card">
-            <div class="card-header">Static Inputs (Geometrical Design)</div>
-            <div class="card-body" id="static-inputs-container">
-              <p class="text-muted small">Loading…</p>
-            </div>
-          </div>
-        </div>
+    <!-- Full-area chart canvas -->
+    <div class="fnx-chart-wrap">
+      <canvas id="plot-canvas"></canvas>
+      <p id="plot-no-data">No data to plot.</p>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT CONTROL PANEL ── -->
+  <div class="fnx-right">
+
+    <!-- Header: Dashboard Control + BRIDGE / START -->
+    <div class="fnx-panel-head">
+      <span class="fnx-panel-title">Dashboard Control</span>
+      <div class="head-btns">
+        <button id="btn-load-defaults" class="btn btn-bridge"
+          onclick="runSteadyState(true)" title="Load Defaults &amp; Solve">BRIDGE</button>
+        <button id="btn-start-transient" class="btn btn-success btn-sm"
+          onclick="startTransient()">START</button>
       </div>
     </div>
 
-    <!-- ============================================================
-         RESULTS
-         ============================================================ -->
-    <div class="tab-pane fade" id="tab-results">
-      <div class="row g-3">
-        <div class="col-12 col-md-4">
-          <label class="form-label">Filter by Category</label>
-          <select id="results-category-filter" class="form-select form-select-sm" onchange="renderResultsTable()">
-            <option value="">— All —</option>
-          </select>
+    <!-- Mode row: SIMULATE (active label) | STEADY STATE | STOP -->
+    <div class="fnx-mode-row">
+      <div class="fnx-mode-btn mode-active">SIMULATE</div>
+      <button id="btn-steady-state" class="fnx-mode-btn"
+        onclick="runSteadyState(false)">STEADY STATE</button>
+      <button id="btn-stop-transient" class="fnx-mode-btn mode-stop"
+        onclick="stopTransient()" disabled>STOP</button>
+    </div>
+
+    <!-- Tab nav (scrollable pill bar) -->
+    <div class="fnx-tabs-row" id="mainTabs">
+      <a class="fnx-tab-btn active" data-bs-toggle="tab" href="#tab-operating">Operating Conditions</a>
+      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-geometry">Geometrical Des.</a>
+      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-results">Results</a>
+      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-plot">Plotting</a>
+      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-viz">Visualization</a>
+      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-mapping">Mapping</a>
+      <a class="fnx-tab-btn" data-bs-toggle="tab" href="#tab-config">Config</a>
+    </div>
+
+    <!-- Tab content -->
+    <div class="tab-content fnx-tab-content">
+
+      <!-- ─── OPERATING CONDITIONS ─── -->
+      <div class="tab-pane fade show active" id="tab-operating">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Dynamic Inputs</div>
+          <div id="dynamic-inputs-container">
+            <p class="text-muted small">Loading…</p>
+          </div>
         </div>
-        <div class="col-12">
-          <div class="card">
-            <div class="card-header">Simulation Results</div>
-            <div class="card-body p-0">
-              <table class="table table-sm table-dark table-hover mb-0 output-table">
-                <thead><tr><th>Category</th><th>Key</th><th>Description</th><th>Value</th><th>Unit</th></tr></thead>
-                <tbody id="results-body">
-                  <tr><td colspan="5" class="text-muted">Run a simulation to see results.</td></tr>
-                </tbody>
-              </table>
-            </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Live Output Values</div>
+          <div class="fnx-table-wrap">
+            <table class="table table-sm table-dark table-hover mb-0 output-table">
+              <thead><tr><th>Key</th><th>Value</th><th>Unit</th></tr></thead>
+              <tbody id="live-outputs-body">
+                <tr><td colspan="3" class="text-muted">No data yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Log</div>
+          <div id="log-area"></div>
+        </div>
+      </div>
+
+      <!-- ─── GEOMETRICAL DESIGN ─── -->
+      <div class="tab-pane fade" id="tab-geometry">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Static Inputs (Geometrical Design)</div>
+          <div id="static-inputs-container">
+            <p class="text-muted small">Loading…</p>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- ============================================================
-         PLOTTING
-         ============================================================ -->
-    <div class="tab-pane fade" id="tab-plot">
-      <div class="row g-3">
-
-        <!-- Controls -->
-        <div class="col-12 col-lg-3">
-          <div class="card h-100">
-            <div class="card-header">Plot Settings</div>
-            <div class="card-body">
-
-              <div class="mb-3">
-                <label class="form-label">X Axis</label>
-                <select id="plot-x-axis" class="form-select form-select-sm">
-                  <option value="Time">Time (s)</option>
-                </select>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label">Y Axis – select one or more</label>
-                <div id="plot-y-checkboxes" style="max-height:300px;overflow-y:auto;">
-                  <p class="text-muted small">Run a simulation to see available outputs.</p>
-                </div>
-              </div>
-
-              <div class="form-check mb-3">
-                <input class="form-check-input" type="checkbox" id="plot-auto-refresh" />
-                <label class="form-check-label" for="plot-auto-refresh">Auto-refresh (2 s)</label>
-              </div>
-
-              <button class="btn btn-primary btn-sm w-100" onclick="renderPlot()">
-                📈 Plot
-              </button>
-              <button class="btn btn-outline-secondary btn-sm w-100 mt-2" onclick="clearPlot()">
-                🗑 Clear
-              </button>
-
-            </div>
+      <!-- ─── RESULTS ─── -->
+      <div class="tab-pane fade" id="tab-results">
+        <div class="fnx-section">
+          <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+            <label class="form-label mb-0" style="white-space:nowrap">Filter Category</label>
+            <select id="results-category-filter" class="form-select form-select-sm flex-grow-1"
+              onchange="renderResultsTable()">
+              <option value="">— All —</option>
+            </select>
           </div>
-        </div>
-
-        <!-- Chart canvas -->
-        <div class="col-12 col-lg-9">
-          <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span>Time-Series Chart</span>
-              <span id="plot-point-count" class="small text-muted"></span>
-            </div>
-            <div class="card-body p-2" style="position:relative;min-height:400px;">
-              <canvas id="plot-canvas"></canvas>
-              <p id="plot-no-data" class="text-muted text-center mt-5">
-                No history data yet — run a transient or steady-state simulation first,
-                then select variables and click <strong>Plot</strong>.
-              </p>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- ============================================================
-         VISUALIZATION SETTINGS
-         ============================================================ -->
-    <div class="tab-pane fade" id="tab-viz">
-      <div class="row g-3">
-        <div class="col-12 col-lg-6">
-          <div class="card">
-            <div class="card-header">USD Prim Colorization (applied in Omniverse viewport)</div>
-            <div class="card-body">
-
-              <div class="mb-3">
-                <label class="form-label">Property to Visualize</label>
-                <select id="viz-property" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label">Colormap</label>
-                <select id="viz-colormap" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
-              </div>
-
-              <div class="mb-3">
-                <div class="form-check mb-2">
-                  <input class="form-check-input" type="checkbox" id="viz-manual-check"
-                    onchange="toggleManualBounds(this.checked)" />
-                  <label class="form-check-label" for="viz-manual-check">Set Manual Bounds</label>
-                </div>
-                <div class="row g-2" id="viz-bounds-row" style="display:none!important">
-                  <div class="col-6">
-                    <label class="form-label">Min</label>
-                    <input type="number" id="viz-min" class="form-control form-control-sm"
-                      placeholder="Auto" onchange="saveVizSettings()" disabled />
-                  </div>
-                  <div class="col-6">
-                    <label class="form-label">Max</label>
-                    <input type="number" id="viz-max" class="form-control form-control-sm"
-                      placeholder="Auto" onchange="saveVizSettings()" disabled />
-                  </div>
-                </div>
-              </div>
-
-              <button class="btn btn-primary btn-sm" onclick="saveVizSettings()">
-                💾 Apply Viz Settings
-              </button>
-              <span id="viz-save-msg" class="ms-2 small text-success d-none">Saved!</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-12 col-lg-6">
-          <div class="card">
-            <div class="card-header">How it works</div>
-            <div class="card-body small text-muted">
-              <p>
-                After each simulation step the Omniverse extension reads these settings
-                and colours USD prims in the 3D viewport using the selected property
-                and colormap.
-              </p>
-              <p>
-                The colorization uses <strong>strongerThanDescendants</strong> binding
-                on the parent Xform, so all child geometry is covered automatically.
-              </p>
-              <p>
-                When no data is available for a prim the fallback material
-                <code>/World/Looks/Aluminum_Foil</code> is applied (or silver if not
-                present in the stage).
-              </p>
-            </div>
+          <div class="fnx-section-title">Simulation Results</div>
+          <div class="fnx-table-wrap">
+            <table class="table table-sm table-dark table-hover mb-0 output-table">
+              <thead><tr><th>Cat.</th><th>Key</th><th>Desc.</th><th>Value</th><th>Unit</th></tr></thead>
+              <tbody id="results-body">
+                <tr><td colspan="5" class="text-muted">Run a simulation to see results.</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- ============================================================
-         RESULTS MAPPING
-         ============================================================ -->
-    <div class="tab-pane fade" id="tab-mapping">
-      <div class="row g-3">
-
-        <div class="col-12 col-lg-6">
-          <div class="card">
-            <div class="card-header">1 · Add Flownex Attribute to Prims</div>
-            <div class="card-body">
-              <p class="small text-muted mb-2">
-                Adds a <code>flownex:componentName</code> attribute to every prim under
-                the target path so you can assign component identifiers in the Property
-                panel.
-              </p>
-              <div class="mb-3">
-                <label class="form-label">Target Prim Path</label>
-                <input type="text" id="mapping-root" class="form-control form-control-sm" value="/World" />
-              </div>
-              <button class="btn btn-primary btn-sm" onclick="mappingAddAttribute()">
-                Start Prim Property Override
-              </button>
+      <!-- ─── PLOTTING (controls; chart is in center) ─── -->
+      <div class="tab-pane fade" id="tab-plot">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Plot Settings</div>
+          <div class="mb-2">
+            <label class="form-label">X Axis</label>
+            <select id="plot-x-axis" class="form-select form-select-sm">
+              <option value="Time">Time (s)</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Y Axis – select one or more</label>
+            <div id="plot-y-checkboxes" style="max-height:220px;overflow-y:auto;">
+              <p class="text-muted small">Run a simulation to see available outputs.</p>
             </div>
           </div>
-        </div>
-
-        <div class="col-12 col-lg-6">
-          <div class="card">
-            <div class="card-header">2 · Generate Mapping Config File</div>
-            <div class="card-body">
-              <p class="small text-muted mb-2">
-                Matches prims whose <code>flownex:componentName</code> value equals a
-                <em>ComponentIdentifier</em> in Outputs.csv and writes
-                <strong>FlownexMapping.json</strong> to the IO directory.
-              </p>
-              <button class="btn btn-success btn-sm" onclick="mappingGenerate()">
-                Generate FlownexMapping.json
-              </button>
-            </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="plot-auto-refresh" />
+            <label class="form-check-label" for="plot-auto-refresh">Auto-refresh (2 s)</label>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary btn-sm flex-grow-1" onclick="renderPlot()">📈 Plot</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="clearPlot()" title="Clear">��</button>
+          </div>
+          <div class="mt-2">
+            <span id="plot-point-count" class="small text-muted"></span>
           </div>
         </div>
-
-        <div class="col-12">
-          <div class="card">
-            <div class="card-header">Mapping Log</div>
-            <div class="card-body p-2">
-              <div id="mapping-log" class="small" style="font-family:monospace; min-height:60px;"></div>
-            </div>
-          </div>
+        <div class="fnx-section">
+          <p class="small text-muted">
+            The chart is displayed in the main viewport on the left.
+            Select variables above and click <strong>Plot</strong>.
+          </p>
         </div>
-
       </div>
-    </div>
 
-    <!-- ============================================================
-         CONFIGURATION
-         ============================================================ -->
-    <div class="tab-pane fade" id="tab-config">
-      <div class="row g-3">
-
-        <div class="col-12 col-lg-8">
-          <div class="card">
-            <div class="card-header">Flownex Configuration</div>
-            <div class="card-body">
-              <div class="mb-3">
-                <label class="form-label">Flownex Project File (.proj / .projz)</label>
-                <input type="text" id="cfg-project" class="form-control form-control-sm"
-                  placeholder="D:\path\to\project.proj" />
+      <!-- ─── VISUALIZATION ─── -->
+      <div class="tab-pane fade" id="tab-viz">
+        <div class="fnx-section">
+          <div class="fnx-section-title">USD Prim Colorization</div>
+          <div class="mb-2">
+            <label class="form-label">Property to Visualize</label>
+            <select id="viz-property" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Colormap</label>
+            <select id="viz-colormap" class="form-select form-select-sm" onchange="saveVizSettings()"></select>
+          </div>
+          <div class="mb-2">
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="viz-manual-check"
+                onchange="toggleManualBounds(this.checked)" />
+              <label class="form-check-label" for="viz-manual-check">Set Manual Bounds</label>
+            </div>
+            <div class="row g-2" id="viz-bounds-row" style="display:none!important">
+              <div class="col-6">
+                <label class="form-label">Min</label>
+                <input type="number" id="viz-min" class="form-control form-control-sm"
+                  placeholder="Auto" onchange="saveVizSettings()" disabled />
               </div>
-              <div class="mb-3">
-                <label class="form-label">IO Definition Directory</label>
-                <input type="text" id="cfg-io-dir" class="form-control form-control-sm"
-                  placeholder="D:\path\to\IOFiles" />
+              <div class="col-6">
+                <label class="form-label">Max</label>
+                <input type="number" id="viz-max" class="form-control form-control-sm"
+                  placeholder="Auto" onchange="saveVizSettings()" disabled />
               </div>
-              <div class="row mb-3">
-                <div class="col-md-6">
-                  <label class="form-label">Result Polling Interval (s)</label>
-                  <input type="number" id="cfg-poll-interval" class="form-control form-control-sm"
-                    min="0.25" max="10" step="0.25" />
-                </div>
-                <div class="col-md-6 d-flex align-items-end">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cfg-solve-on-change" />
-                    <label class="form-check-label" for="cfg-solve-on-change">Solve on Input Change</label>
-                  </div>
-                </div>
-              </div>
-              <button class="btn btn-primary btn-sm" onclick="saveConfig()">
-                💾 Save Configuration
-              </button>
-              <span id="cfg-save-msg" class="ms-2 small text-success d-none">Saved!</span>
             </div>
           </div>
+          <button class="btn btn-primary btn-sm" onclick="saveVizSettings()">💾 Apply Viz Settings</button>
+          <span id="viz-save-msg" class="ms-2 small text-success d-none">Saved!</span>
         </div>
-
-        <div class="col-12 col-lg-4">
-          <div class="card">
-            <div class="card-header">Flownex API Status</div>
-            <div class="card-body small">
-              <p>Installation detected: <span id="fnx-avail-label" class="fw-bold">…</span></p>
-              <p>Project connected:     <span id="fnx-conn-label"  class="fw-bold">…</span></p>
-              <button class="btn btn-outline-light btn-sm" onclick="refreshStatus()">🔄 Refresh</button>
-            </div>
-          </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">How it works</div>
+          <p class="small text-muted">
+            After each simulation step the Omniverse extension colours USD prims in the 3D viewport
+            using the selected property and colormap.
+          </p>
+          <p class="small text-muted">
+            Uses <strong>strongerThanDescendants</strong> binding on the parent Xform.
+            Fallback: <code>/World/Looks/Aluminum_Foil</code>.
+          </p>
         </div>
-
       </div>
-    </div>
 
-  </div><!-- /tab-content -->
-</div><!-- /container -->
+      <!-- ─── RESULTS MAPPING ─── -->
+      <div class="tab-pane fade" id="tab-mapping">
+        <div class="fnx-section">
+          <div class="fnx-section-title">1 · Add Flownex Attribute</div>
+          <p class="small text-muted mb-2">
+            Adds a <code>flownex:componentName</code> attribute to every prim under the target path.
+          </p>
+          <div class="mb-2">
+            <label class="form-label">Target Prim Path</label>
+            <input type="text" id="mapping-root" class="form-control form-control-sm" value="/World" />
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="mappingAddAttribute()">
+            Start Prim Property Override
+          </button>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">2 · Generate Mapping Config</div>
+          <p class="small text-muted mb-2">
+            Matches prims by <code>flownex:componentName</code> and writes
+            <strong>FlownexMapping.json</strong>.
+          </p>
+          <button class="btn btn-success btn-sm" onclick="mappingGenerate()">
+            Generate FlownexMapping.json
+          </button>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Mapping Log</div>
+          <div id="mapping-log"></div>
+        </div>
+      </div>
+
+      <!-- ─── CONFIGURATION ─── -->
+      <div class="tab-pane fade" id="tab-config">
+        <div class="fnx-section">
+          <div class="fnx-section-title">Flownex Configuration</div>
+          <div class="mb-2">
+            <label class="form-label">Project File (.proj / .projz)</label>
+            <input type="text" id="cfg-project" class="form-control form-control-sm"
+              placeholder="D:\path\to\project.proj" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">IO Definition Directory</label>
+            <input type="text" id="cfg-io-dir" class="form-control form-control-sm"
+              placeholder="D:\path\to\IOFiles" />
+          </div>
+          <div class="row mb-2 g-2">
+            <div class="col-7">
+              <label class="form-label">Polling Interval (s)</label>
+              <input type="number" id="cfg-poll-interval" class="form-control form-control-sm"
+                min="0.25" max="10" step="0.25" />
+            </div>
+            <div class="col-5 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cfg-solve-on-change" />
+                <label class="form-check-label" for="cfg-solve-on-change">Solve on Change</label>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveConfig()">💾 Save Configuration</button>
+          <span id="cfg-save-msg" class="ms-2 small text-success d-none">Saved!</span>
+        </div>
+        <div class="fnx-section">
+          <div class="fnx-section-title">Flownex API Status</div>
+          <div class="mb-1 small">Detected: <span id="fnx-avail-label" class="fw-bold">…</span></div>
+          <div class="mb-2 small">Connected: <span id="fnx-conn-label" class="fw-bold">…</span></div>
+          <button class="btn btn-outline-light btn-sm" onclick="refreshStatus()">🔄 Refresh</button>
+        </div>
+      </div>
+
+    </div><!-- /tab-content -->
+  </div><!-- /right panel -->
+
+</div><!-- /layout -->
+
+<!-- ═══ BOTTOM METRICS BAR ═══ -->
+<div class="fnx-metrics-bar">
+  <div class="fnx-metric">
+    <span class="metric-label">SIM STATUS</span>
+    <span class="metric-val" id="metric-status">—</span>
+  </div>
+  <div class="fnx-metric-sep"></div>
+  <div id="metrics-outputs" style="display:contents"></div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
   crossorigin="anonymous"></script>
@@ -756,7 +721,6 @@
 // Constants
 // ============================================================
 const STATUS_POLL_INTERVAL_MS = 2000;
-// Formatting thresholds: values below this use more decimal places
 const FMT_SMALL_THRESHOLD = 10;
 const FMT_SMALL_DECIMALS  = 4;
 const FMT_LARGE_DECIMALS  = 2;
@@ -780,11 +744,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   refreshStatus();
   startStatusPolling();
 
-  // Wire up plot auto-refresh checkbox (must be done here so the element exists)
+  // Wire up plot auto-refresh checkbox
   document.getElementById("plot-auto-refresh").addEventListener("change", function () {
     if (this.checked) {
       _plotAutoTimer = setInterval(async () => {
-        // Only re-plot when data may have changed (transient running or first draw)
         const s = await api("GET", "/api/simulation/status");
         if (s && (s.transientRunning || Object.keys(s.outputs || {}).length)) {
           renderPlot();
@@ -795,29 +758,29 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 });
+
 // ============================================================
 // Config
 // ============================================================
 async function loadConfig() {
   const cfg = await api("GET", "/api/config");
   if (!cfg) return;
-  document.getElementById("cfg-project").value       = cfg.FlownexProject      || "";
-  document.getElementById("cfg-io-dir").value        = cfg.IOFileDirectory      || "";
+  document.getElementById("cfg-project").value       = cfg.FlownexProject       || "";
+  document.getElementById("cfg-io-dir").value        = cfg.IOFileDirectory       || "";
   document.getElementById("cfg-poll-interval").value = cfg.ResultPollingInterval || "1.0";
   document.getElementById("cfg-solve-on-change").checked = !!cfg.SolveOnChange;
 }
 
 async function saveConfig() {
   const body = {
-    FlownexProject:       document.getElementById("cfg-project").value,
-    IOFileDirectory:      document.getElementById("cfg-io-dir").value,
+    FlownexProject:        document.getElementById("cfg-project").value,
+    IOFileDirectory:       document.getElementById("cfg-io-dir").value,
     ResultPollingInterval: document.getElementById("cfg-poll-interval").value,
-    SolveOnChange:        document.getElementById("cfg-solve-on-change").checked,
+    SolveOnChange:         document.getElementById("cfg-solve-on-change").checked,
   };
   const res = await api("POST", "/api/config", body);
   if (res && res.ok) {
     flash("cfg-save-msg");
-    // Reload inputs/outputs in case IO dir changed
     await loadInputs("dynamic");
     await loadInputs("static");
     await loadOutputDefs();
@@ -852,7 +815,7 @@ function buildInputsHtml(inputs, kind) {
         </div>`;
     }
     return `
-      <div class="mb-3">
+      <div class="mb-2">
         <label class="form-label" for="${uid}">
           ${esc(inp.description)}${inp.unit ? ` [${esc(inp.unit)}]` : ""}
         </label>
@@ -877,7 +840,6 @@ async function onInputChange(key, value) {
 async function loadOutputDefs() {
   outputDefs = await api("GET", "/api/outputs") || [];
 
-  // Populate category filter
   const sel  = document.getElementById("results-category-filter");
   const cats = [...new Set(outputDefs.map(o => o.category).filter(Boolean))];
   sel.innerHTML =
@@ -929,6 +891,8 @@ async function refreshStatus() {
   currentOutputs = s.outputs || {};
   updateLiveOutputsTable();
   renderResultsTable();
+  updateMetricsBar(s);
+  updateLiveMetricsSummary();
 
   // Log
   if (s.log && s.log.length) {
@@ -978,25 +942,76 @@ function renderResultsTable() {
 }
 
 // ============================================================
+// Bottom Metrics Bar
+// ============================================================
+function updateMetricsBar(s) {
+  const el = document.getElementById("metric-status");
+  if (s.transientRunning) {
+    el.textContent = "RUNNING";   el.className = "metric-val running";
+  } else if (s.connected) {
+    el.textContent = "CONNECTED"; el.className = "metric-val connected";
+  } else if (s.flownexAvailable) {
+    el.textContent = "READY";     el.className = "metric-val ready";
+  } else {
+    el.textContent = "OFFLINE";   el.className = "metric-val offline";
+  }
+
+  const out     = document.getElementById("metrics-outputs");
+  const entries = Object.entries(s.outputs || {}).slice(0, 4);
+  if (!entries.length) { out.innerHTML = ""; return; }
+
+  const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
+  out.innerHTML = entries.map(([k, v]) => {
+    const def  = defMap[k] || {};
+    const lbl  = (def.description || k).toUpperCase().slice(0, 16);
+    const unit = def.unit ? ` ${def.unit}` : "";
+    return `
+      <div class="fnx-metric-sep"></div>
+      <div class="fnx-metric">
+        <span class="metric-label">${esc(lbl)}</span>
+        <span class="metric-val">${fmtVal(v)}${esc(unit)}</span>
+      </div>`;
+  }).join("");
+}
+
+// ============================================================
+// Live Metrics Summary (top-left floating panel)
+// ============================================================
+function updateLiveMetricsSummary() {
+  const el      = document.getElementById("live-metrics-summary");
+  const entries = Object.entries(currentOutputs).slice(0, 5);
+  if (!entries.length) {
+    el.innerHTML = '<span class="text-muted" style="font-size:10px">No data to plot.</span>';
+    return;
+  }
+  const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
+  el.innerHTML = entries.map(([k, v]) => {
+    const def  = defMap[k] || {};
+    const unit = def.unit || "";
+    return `<div class="live-row">
+      <span class="live-key">${esc(k)}</span>
+      <span class="live-val">${fmtVal(v)}<span style="color:var(--gray);font-weight:400"> ${esc(unit)}</span></span>
+    </div>`;
+  }).join("");
+}
+
+// ============================================================
 // Visualization settings
 // ============================================================
 async function loadVizSettings() {
   const data = await api("GET", "/api/viz/settings");
   if (!data) return;
 
-  // Populate property dropdown
   const propSel = document.getElementById("viz-property");
   propSel.innerHTML = (data.propertyOptions || [])
     .map((p, i) => `<option value="${i}">${esc(p)}</option>`)
     .join("");
 
-  // Populate colormap dropdown
   const cmapSel = document.getElementById("viz-colormap");
   cmapSel.innerHTML = (data.colormapOptions || [])
     .map((c, i) => `<option value="${i}">${esc(c)}</option>`)
     .join("");
 
-  // Restore saved values
   const s = data.settings || {};
   propSel.value = s.property_index ?? 0;
   cmapSel.value = s.colormap_index ?? 0;
@@ -1068,16 +1083,17 @@ async function stopTransient() {
 }
 
 async function runSteadyState(loadDefaults) {
-  const url = loadDefaults ? "/api/simulation/load-defaults" : "/api/simulation/steady-state";
-  const btn = document.getElementById(loadDefaults ? "btn-load-defaults" : "btn-steady-state");
-  const origText = btn.textContent;
+  const url   = loadDefaults ? "/api/simulation/load-defaults" : "/api/simulation/steady-state";
+  const btnId = loadDefaults ? "btn-load-defaults" : "btn-steady-state";
+  const btn   = document.getElementById(btnId);
+  const orig  = btn.textContent;
   btn.disabled    = true;
-  btn.textContent = "⏳ Running…";
+  btn.textContent = "⏳ …";
 
   const res = await api("POST", url);
   showToast(res);
   btn.disabled    = false;
-  btn.textContent = origText;
+  btn.textContent = orig;
 
   if (res && res.outputs) {
     currentOutputs = res.outputs;
@@ -1090,13 +1106,12 @@ async function runSteadyState(loadDefaults) {
 // Plotting
 // ============================================================
 const PLOT_COLORS = [
-  '#00E6D9','#FF007F','#9D6CFF','#FFD700','#32CD32','#FF5733',
-  '#60B3FF','#FF9F40','#4BC0C0','#FF6384',
+  '#86ef47','#0050e0','#ff007f','#ffcc00','#00e6d9',
+  '#ff5733','#9d6cff','#60b3ff','#ff9f40','#4bc0c0',
 ];
-let _plotChart          = null;
-let _plotAutoTimer      = null;
+let _plotChart     = null;
+let _plotAutoTimer = null;
 
-// Called from loadOutputDefs() when outputs are loaded so checkboxes are ready
 function buildPlotYCheckboxes() {
   const container = document.getElementById("plot-y-checkboxes");
   if (!outputDefs || !outputDefs.length) return;
@@ -1120,8 +1135,8 @@ async function renderPlot() {
     return;
   }
 
-  const xKey    = document.getElementById("plot-x-axis").value || "Time";
-  const yKeys   = Array.from(
+  const xKey  = document.getElementById("plot-x-axis").value || "Time";
+  const yKeys = Array.from(
     document.querySelectorAll("#plot-y-checkboxes input[type=checkbox]:checked")
   ).map(cb => cb.value);
 
@@ -1136,14 +1151,14 @@ async function renderPlot() {
   document.getElementById("plot-point-count").textContent =
     `${history.length} data point${history.length !== 1 ? "s" : ""}`;
 
-  const xData = history.map(d => d[xKey] ?? null);
+  const xData  = history.map(d => d[xKey] ?? null);
   const defMap = Object.fromEntries(outputDefs.map(o => [o.key, o]));
 
   const datasets = yKeys.map((key, i) => ({
     label:           defMap[key] ? `${defMap[key].description || key} [${defMap[key].unit || ""}]` : key,
     data:            history.map(d => d[key] ?? null),
     borderColor:     PLOT_COLORS[i % PLOT_COLORS.length],
-    backgroundColor: PLOT_COLORS[i % PLOT_COLORS.length] + "33",
+    backgroundColor: PLOT_COLORS[i % PLOT_COLORS.length] + "22",
     borderWidth:     2,
     pointRadius:     history.length > 100 ? 0 : 3,
     tension:         0.2,
@@ -1159,27 +1174,26 @@ async function renderPlot() {
       animation: false,
       scales: {
         x: {
-          ticks: { color: "#aaa", maxTicksLimit: 12 },
-          grid:  { color: "#333" },
-          title: { display: true, text: xKey, color: "#ccc" },
+          ticks: { color: "#888", maxTicksLimit: 10, font: { size: 10 } },
+          grid:  { color: "rgba(89,89,89,0.2)" },
+          title: { display: true, text: xKey, color: "#999", font: { size: 11 } },
         },
         y: {
-          ticks: { color: "#aaa" },
-          grid:  { color: "#333" },
-          title: { display: true, text: "Value", color: "#ccc" },
+          ticks: { color: "#888", font: { size: 10 } },
+          grid:  { color: "rgba(89,89,89,0.2)" },
+          title: { display: true, text: "Value", color: "#999", font: { size: 11 } },
         },
       },
       plugins: {
-        legend: { labels: { color: "#ddd", boxWidth: 14 } },
+        legend: { labels: { color: "#ccc", boxWidth: 12, font: { size: 11 } } },
         tooltip: { mode: "index", intersect: false },
       },
     },
   };
 
   const canvas = document.getElementById("plot-canvas");
-  canvas.style.minHeight = "380px";
   if (_plotChart) {
-    _plotChart.data   = cfg.data;
+    _plotChart.data    = cfg.data;
     _plotChart.options = cfg.options;
     _plotChart.update("none");
   } else {
@@ -1190,8 +1204,7 @@ async function renderPlot() {
 function clearPlot() {
   if (_plotChart) { _plotChart.destroy(); _plotChart = null; }
   document.getElementById("plot-no-data").style.display = "";
-  document.getElementById("plot-no-data").textContent =
-    "No history data yet — run a transient or steady-state simulation first, then select variables and click Plot.";
+  document.getElementById("plot-no-data").textContent = "No data to plot.";
   document.getElementById("plot-point-count").textContent = "";
   stopPlotAutoRefresh();
   document.getElementById("plot-auto-refresh").checked = false;
@@ -1201,7 +1214,9 @@ function stopPlotAutoRefresh() {
   if (_plotAutoTimer) { clearInterval(_plotAutoTimer); _plotAutoTimer = null; }
 }
 
-
+// ============================================================
+// Helpers
+// ============================================================
 async function api(method, url, body) {
   try {
     const opts = { method, headers: { "Content-Type": "application/json" } };
