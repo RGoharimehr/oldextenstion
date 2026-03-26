@@ -1255,11 +1255,29 @@ function logMapping(msg) {
 // Simulation control
 // ============================================================
 async function startTransient() {
-  showToast(await api("POST", "/api/simulation/start-transient"));
+  const btn  = document.getElementById("btn-start-transient");
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = "⏳ Starting…";
+  const res = await api("POST", "/api/simulation/start-transient");
+  showToast(res || { ok: false, message: "No response from server." });
+  if (!res || !res.ok) {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
 }
 
 async function stopTransient() {
-  showToast(await api("POST", "/api/simulation/stop-transient"));
+  const btn  = document.getElementById("btn-stop-transient");
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = "⏳ Stopping…";
+  const res = await api("POST", "/api/simulation/stop-transient");
+  showToast(res || { ok: false, message: "No response from server." });
+  if (!res || !res.ok) {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
 }
 
 async function runSteadyState(loadDefaults) {
