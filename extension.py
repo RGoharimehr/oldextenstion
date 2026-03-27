@@ -25,7 +25,7 @@ from .viz_utils import (
 try:
     import matplotlib
     matplotlib.use("Agg")
-    from .plot_utils import generate_plot_image_from_history
+    from .plot_utils import generate_plot_image_from_history, PLOT_COLORS
     PLOTTING_AVAILABLE = True
 except ImportError:
     PLOTTING_AVAILABLE = False
@@ -734,8 +734,17 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
 
         image_provider = ui.ByteImageProvider()
 
-        with ui.VStack(spacing=0, height=300):
-            ui.ImageWithProvider(image_provider)
+        with ui.VStack(spacing=4, height=ui.Pixel(0)):
+            with ui.ZStack(height=300):
+                ui.ImageWithProvider(image_provider)
+            # Lightweight color-coded legend below the plot image
+            with ui.HStack(height=20, spacing=8):
+                for i, y_key in enumerate(y_axis_keys):
+                    color_hex = PLOT_COLORS[i % len(PLOT_COLORS)] if PLOTTING_AVAILABLE else "#FFFFFF"
+                    label_text = self._plot_key_to_label_map.get(y_key, y_key)
+                    with ui.HStack(width=ui.Pixel(0), spacing=4):
+                        ui.Rectangle(width=12, height=12, style={"background_color": cl(color_hex)})
+                        ui.Label(label_text, style={"font_size": 14})
 
         if PLOTTING_AVAILABLE and sorted_history:
             image_data = generate_plot_image_from_history(
