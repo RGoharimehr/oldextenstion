@@ -700,11 +700,43 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
 
             x_key = request["x_axis_key"]
             y_keys = request["y_axis_keys"]
+            recent_history = history[-100:]
 
-            # for each y key update existing plot line
+            # Recalculate x-axis range from latest data
+            x_values = [d.get(x_key, 0) for d in recent_history]
+            x_data_min = min(x_values) if x_values else 0.0
+            x_data_max = max(x_values) if x_values else 1.0
+            if x_data_max == x_data_min:
+                x_data_max += 1.0
+            x_padding = (x_data_max - x_data_min) * 0.05
+            x_scale_min = x_data_min - x_padding
+            x_scale_max = x_data_max + x_padding
+
+            # Update x-axis tick labels to reflect the current time range
+            tick_labels = request.get("x_tick_labels", [])
+            num_ticks = len(tick_labels)
+            if num_ticks > 1:
+                for i, lbl in enumerate(tick_labels):
+                    val = x_scale_min + i * (x_scale_max - x_scale_min) / (num_ticks - 1)
+                    lbl.text = f"{val:.2f}"
+
+            # Recalculate y-axis range from latest data
+            all_y_values = []
+            for key in y_keys:
+                all_y_values.extend([d.get(key, 0) for d in recent_history])
+            y_data_min = min(all_y_values) if all_y_values else 0.0
+            y_data_max = max(all_y_values) if all_y_values else 1.0
+            y_data_max = max(y_data_max, y_data_min + 0.1)
+            y_padding = (y_data_max - y_data_min) * 0.05
+            y_scale_min = y_data_min - y_padding
+            y_scale_max = y_data_max + y_padding
+
+            # Update each plot line with new XY data and y-axis scale
             for y_key, line_plot in request.get("line_plots", {}).items():
-                data = [(d.get(x_key, 0), d.get(y_key, 0)) for d in history[-100:]]
+                data = [(d.get(x_key, 0), d.get(y_key, 0)) for d in recent_history]
                 line_plot.set_xy_data(data)
+                line_plot.scale_min = y_scale_min
+                line_plot.scale_max = y_scale_max
 
 
     def _build_single_plot_group(self, index, request):
@@ -774,10 +806,11 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                         plot.scale_max = y_scale_max
                         line_plots[key] = plot
 
-            self._update_x_axis_labels(x_scale_min, x_scale_max, x_axis_key)
+            x_tick_labels = self._update_x_axis_labels(x_scale_min, x_scale_max, x_axis_key)
 
         # Store persistent widget references in the request dict for incremental updates.
         request["line_plots"] = line_plots
+        request["x_tick_labels"] = x_tick_labels
         request["widgets_built"] = True  # sentinel: widgets have been created for this request
 
     def _update_y_axis_labels(self, y_min, y_max, y_units, num_ticks=5):
@@ -795,18 +828,21 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                     ui.Spacer()
 
     def _update_x_axis_labels(self, x_min, x_max, x_units, num_ticks=5):
+        tick_labels = []
         with ui.HStack(height=20, spacing=0):
             ui.Spacer(width=50)
             for i in range(num_ticks):
                 val = x_min + i * (x_max - x_min) / (num_ticks - 1)
                 with ui.VStack():
-                    ui.Label(f"{val:.2f}", alignment=ui.Alignment.CENTER, style={"font_size": 16})
+                    lbl = ui.Label(f"{val:.2f}", alignment=ui.Alignment.CENTER, style={"font_size": 16})
+                    tick_labels.append(lbl)
                 if i < num_ticks - 1:
                     ui.Spacer()
 
             with ui.VStack():
                 ui.Spacer()
                 ui.Label(x_units, alignment=ui.Alignment.CENTER, style={"font_size": 16})
+        return tick_labels
 
     def _draw_grid_lines(self, num_ticks=5):
         grid_color = cl("#6E6E6E")
