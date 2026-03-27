@@ -25,6 +25,7 @@ from .viz_utils import (
 try:
     import matplotlib
     matplotlib.use("Agg")
+    from .plot_utils import generate_plot_image_from_history
     PLOTTING_AVAILABLE = True
 except ImportError:
     PLOTTING_AVAILABLE = False
@@ -664,6 +665,8 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             for req in self._plot_requests:
                 req.pop("widgets_built", None)
                 req.pop("line_plots", None)
+                req.pop("x_tick_labels", None)
+                req.pop("image_provider", None)
 
         history = self._FlownexMain.simulation_data_history
         if not history:
@@ -691,7 +694,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             return
 
         history = self._FlownexMain.simulation_data_history
-        if not history:
+        if not history or not PLOTTING_AVAILABLE:
             return
 
         for request in self._plot_requests:
@@ -700,43 +703,23 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
 
             x_key = request["x_axis_key"]
             y_keys = request["y_axis_keys"]
-            recent_history = history[-100:]
+            image_provider = request.get("image_provider")
+            if not image_provider:
+                continue
 
-            # Recalculate x-axis range from latest data
-            x_values = [d.get(x_key, 0) for d in recent_history]
-            x_data_min = min(x_values) if x_values else 0.0
-            x_data_max = max(x_values) if x_values else 1.0
-            if x_data_max == x_data_min:
-                x_data_max += 1.0
-            x_padding = (x_data_max - x_data_min) * 0.05
-            x_scale_min = x_data_min - x_padding
-            x_scale_max = x_data_max + x_padding
+            recent_history = sorted(history[-100:], key=lambda d: d.get(x_key, 0))
+            label_parts = [self._plot_key_to_label_map.get(k, k) for k in y_keys]
+            plot_title = ", ".join(label_parts)
 
-            # Update x-axis tick labels to reflect the current time range
-            tick_labels = request.get("x_tick_labels", [])
-            num_ticks = len(tick_labels)
-            if num_ticks > 1:
-                for i, lbl in enumerate(tick_labels):
-                    val = x_scale_min + i * (x_scale_max - x_scale_min) / (num_ticks - 1)
-                    lbl.text = f"{val:.2f}"
-
-            # Recalculate y-axis range from latest data
-            all_y_values = []
-            for key in y_keys:
-                all_y_values.extend([d.get(key, 0) for d in recent_history])
-            y_data_min = min(all_y_values) if all_y_values else 0.0
-            y_data_max = max(all_y_values) if all_y_values else 1.0
-            y_data_max = max(y_data_max, y_data_min + 0.1)
-            y_padding = (y_data_max - y_data_min) * 0.05
-            y_scale_min = y_data_min - y_padding
-            y_scale_max = y_data_max + y_padding
-
-            # Update each plot line with new XY data and y-axis scale
-            for y_key, line_plot in request.get("line_plots", {}).items():
-                data = [(d.get(x_key, 0), d.get(y_key, 0)) for d in recent_history]
-                line_plot.set_xy_data(data)
-                line_plot.scale_min = y_scale_min
-                line_plot.scale_max = y_scale_max
+            image_data = generate_plot_image_from_history(
+                simulation_history=recent_history,
+                x_axis_key=x_key,
+                y_axis_keys=y_keys,
+                key_to_label_map=self._plot_key_to_label_map,
+                plot_title=plot_title,
+            )
+            if image_data:
+                image_provider.set_bytes_data(image_data[0], list(image_data[1]))
 
 
     def _build_single_plot_group(self, index, request):
@@ -746,117 +729,27 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
 
         sorted_history = sorted(history, key=lambda d: d.get(x_axis_key, 0))
 
-        all_y_values = []
-        y_units = set()
-        output_defs_by_key = {o.Key: o for o in self._FlownexMain._fnx_outputs}
+        label_parts = [self._plot_key_to_label_map.get(k, k) for k in y_axis_keys]
+        plot_title = ", ".join(label_parts)
 
-        for key in y_axis_keys:
-            all_y_values.extend([d.get(key, 0) for d in sorted_history])
-            if key in output_defs_by_key:
-                y_units.add(output_defs_by_key[key].Unit)
+        image_provider = ui.ByteImageProvider()
 
-        y_data_min = min(all_y_values) if all_y_values else 0.0
-        y_data_max = max(all_y_values) if all_y_values else 1.0
-        y_data_max = max(y_data_max, y_data_min + 0.1)
-        if y_data_max == y_data_min:
-            y_data_max += 1.0
+        with ui.VStack(spacing=0, height=300):
+            ui.ImageWithProvider(image_provider, fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT)
 
-        y_padding = (y_data_max - y_data_min) * 0.05
-        y_scale_min = y_data_min - y_padding
-        y_scale_max = y_data_max + y_padding
+        if PLOTTING_AVAILABLE and sorted_history:
+            image_data = generate_plot_image_from_history(
+                simulation_history=sorted_history,
+                x_axis_key=x_axis_key,
+                y_axis_keys=y_axis_keys,
+                key_to_label_map=self._plot_key_to_label_map,
+                plot_title=plot_title,
+            )
+            if image_data:
+                image_provider.set_bytes_data(image_data[0], list(image_data[1]))
 
-        x_values = [d.get(x_axis_key, 0) for d in sorted_history]
-        x_data_min = min(x_values) if x_values else 0.0
-        x_data_max = max(x_values) if x_values else 1.0
-        if x_data_max == x_data_min:
-            x_data_max += 1.0
-
-        x_padding = (x_data_max - x_data_min) * 0.05
-        x_scale_min = x_data_min - x_padding
-        x_scale_max = x_data_max + x_padding
-
-        # Collect plot widget references so _update_plot_window_data() can push
-        # new XY data without recreating any UI elements.
-        line_plots = {}
-
-        with ui.VStack(spacing=4, height=200):
-            with ui.VStack(height=max(len(y_axis_keys) * 18, 18)):
-                for key in y_axis_keys:
-                    with ui.HStack(height=18):
-                        ui.Spacer(width=5)
-                        with ui.ZStack(height=18):
-                            ui.Rectangle(style={"background_color": cl("#363636")})
-                            ui.Label(
-                                self._plot_key_to_label_map.get(key, key),
-                                style={"font_size": 26, "color": cl("#E9E9E9"), "background_color": cl("#74B405")},
-                                alignment=ui.Alignment.CENTER,
-                            )
-
-            with ui.HStack():
-                self._update_y_axis_labels(y_scale_min, y_scale_max, ", ".join(y_units) or "")
-                with ui.ZStack(style={"background_color": cl("#E6E6E6")}):
-                    ui.Grid(ui.Direction.TOP_TO_BOTTOM, column_count=10)
-
-                    for i, key in enumerate(y_axis_keys):
-                        style = {"color": cl.black, "line_width": 25.0}
-                        plot = ui.Plot(ui.Type.LINE2D, style=style)
-                        data = [(d.get(x_axis_key, 0), d.get(key, 0)) for d in sorted_history]
-                        plot.set_xy_data(data)
-                        plot.scale_min = y_scale_min
-                        plot.scale_max = y_scale_max
-                        line_plots[key] = plot
-
-            x_tick_labels = self._update_x_axis_labels(x_scale_min, x_scale_max, x_axis_key)
-
-        # Store persistent widget references in the request dict for incremental updates.
-        request["line_plots"] = line_plots
-        request["x_tick_labels"] = x_tick_labels
+        request["image_provider"] = image_provider
         request["widgets_built"] = True  # sentinel: widgets have been created for this request
-
-    def _update_y_axis_labels(self, y_min, y_max, y_units, num_ticks=5):
-        with ui.VStack(width=50, spacing=0):
-            ui.Label(y_units, alignment=ui.Alignment.CENTER, style={"font_size": 24.0})
-            ui.Spacer()
-            for i in range(num_ticks):
-                val = y_max - i * (y_max - y_min) / (num_ticks - 1)
-                if y_max - y_min < 0.5:
-                    ui.Label(f"{val:.2f}  ", alignment=ui.Alignment.CENTER, width=50, style={"font_size": 20.0})
-                else:
-                    ui.Label(f"{val:.1f}  ", alignment=ui.Alignment.CENTER, width=50, style={"font_size": 20.0})
-
-                if i < num_ticks - 1:
-                    ui.Spacer()
-
-    def _update_x_axis_labels(self, x_min, x_max, x_units, num_ticks=5):
-        tick_labels = []
-        with ui.HStack(height=20, spacing=0):
-            ui.Spacer(width=50)
-            for i in range(num_ticks):
-                val = x_min + i * (x_max - x_min) / (num_ticks - 1)
-                with ui.VStack():
-                    lbl = ui.Label(f"{val:.2f}", alignment=ui.Alignment.CENTER, style={"font_size": 16})
-                    tick_labels.append(lbl)
-                if i < num_ticks - 1:
-                    ui.Spacer()
-
-            with ui.VStack():
-                ui.Spacer()
-                ui.Label(x_units, alignment=ui.Alignment.CENTER, style={"font_size": 16})
-        return tick_labels
-
-    def _draw_grid_lines(self, num_ticks=5):
-        grid_color = cl("#6E6E6E")
-
-        with ui.ZStack():
-            with ui.Grid(ui.Direction.TOP_TO_BOTTOM, column_count=1):
-                for _ in range(num_ticks):
-                    with ui.Frame(height=0):
-                        ui.Rectangle(height=1, style={"background_color": grid_color, "border_radius": 0})
-
-            with ui.Grid(ui.Direction.LEFT_TO_RIGHT, row_count=1):
-                for _ in range(num_ticks):
-                    with ui.Frame(width=0):
-                        ui.Rectangle(width=1, style={"background_color": grid_color, "border_radius": 0})
 
     def _on_clear_history(self):
         self._FlownexMain.simulation_data_history.clear()
