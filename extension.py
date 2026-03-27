@@ -735,7 +735,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         image_provider = ui.ByteImageProvider()
 
         with ui.VStack(spacing=0, height=300):
-            ui.ImageWithProvider(image_provider, fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT)
+            ui.ImageWithProvider(image_provider)
 
         if PLOTTING_AVAILABLE and sorted_history:
             image_data = generate_plot_image_from_history(
