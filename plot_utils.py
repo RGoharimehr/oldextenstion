@@ -61,11 +61,6 @@ def generate_plot_image_from_history(
     for spine in ax.spines.values():
         spine.set_edgecolor(GRID_COLOR)
 
-    if y_axis_keys:
-        legend = ax.legend(facecolor=AXES_BG_COLOR, edgecolor=GRID_COLOR)
-        for text in legend.get_texts():
-            text.set_color(TEXT_COLOR)
-
     # --- Convert plot to an image for the UI ---
     buf = io.BytesIO()
     try:

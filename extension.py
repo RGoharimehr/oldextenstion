@@ -647,12 +647,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             self._plot_window = None
 
     def _rebuild_and_update_plot_window(self):
-        """Build the plot window and all plot widgets once, then refresh data.
-
-        Called when the user adds a new plot request (user action).  The polling
-        cycle must NOT call this method – it should call _update_plot_window_data()
-        instead so that only XY data is pushed into existing widgets.
-        """
+        """Open the plot window (creating it if needed) then rebuild its content."""
         if not self._plot_window or not self._plot_window.visible:
             self._plot_window = ui.Window(
                 "Simulation Plot",
@@ -660,10 +655,6 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                 height=700,
                 closed_fn=lambda: setattr(self, "_plot_window", None),
             )
-            # New window means all previously stored widget refs are stale – drop them.
-            for req in self._plot_requests:
-                req.pop("widgets_built", None)
-                req.pop("line_plots", None)
 
         history = self._FlownexMain.simulation_data_history
         if not history:
@@ -672,21 +663,17 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                 ui.Label("No simulation data to plot.", alignment=ui.Alignment.CENTER, style={"font_size": 18})
             return
 
-        # Only do a full (expensive) rebuild when at least one request is missing its widgets.
-        all_built = all(req.get("widgets_built") is not None for req in self._plot_requests)
-        if not all_built:
-            with self._plot_window.frame:
-                self._plot_window.frame.clear()
-                with ui.ScrollingFrame():
-                    with ui.VStack(spacing=20, style={"padding": 10}):
-                        for i, request in enumerate(self._plot_requests):
-                            ui.Separator()
-                            self._build_single_plot_group(i, request)
-
-        # Refresh data in existing plot widgets (lightweight).
         self._update_plot_window_data()
 
     def _update_plot_window_data(self):
+        """Rebuild all plot groups with the latest simulation data.
+
+        Called both when a new plot request is added (via _rebuild_and_update_plot_window)
+        and on every polling cycle so that the displayed data always reflects the
+        current sliding window of simulation history.  ui.Plot widgets are recreated
+        fresh each call rather than updated in-place because set_xy_data() alone does
+        not trigger a visual re-render.
+        """
         if not self._plot_window or not self._plot_window.visible:
             return
 
@@ -694,17 +681,19 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         if not history:
             return
 
-        for request in self._plot_requests:
-            if not request.get("widgets_built"):
-                continue
+        # Drop stale widget refs so _build_single_plot_group creates new ones.
+        for req in self._plot_requests:
+            req.pop("widgets_built", None)
+            req.pop("line_plots", None)
+            req.pop("x_tick_labels", None)
 
-            x_key = request["x_axis_key"]
-            y_keys = request["y_axis_keys"]
-
-            # for each y key update existing plot line
-            for y_key, line_plot in request.get("line_plots", {}).items():
-                data = [(d.get(x_key, 0), d.get(y_key, 0)) for d in history[-100:]]
-                line_plot.set_xy_data(data)
+        with self._plot_window.frame:
+            self._plot_window.frame.clear()
+            with ui.ScrollingFrame():
+                with ui.VStack(spacing=20, style={"padding": 10}):
+                    for i, request in enumerate(self._plot_requests):
+                        ui.Separator()
+                        self._build_single_plot_group(i, request)
 
 
     def _build_single_plot_group(self, index, request):
@@ -774,10 +763,11 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                         plot.scale_max = y_scale_max
                         line_plots[key] = plot
 
-            self._update_x_axis_labels(x_scale_min, x_scale_max, x_axis_key)
+            x_tick_labels = self._update_x_axis_labels(x_scale_min, x_scale_max, x_axis_key)
 
         # Store persistent widget references in the request dict for incremental updates.
         request["line_plots"] = line_plots
+        request["x_tick_labels"] = x_tick_labels
         request["widgets_built"] = True  # sentinel: widgets have been created for this request
 
     def _update_y_axis_labels(self, y_min, y_max, y_units, num_ticks=5):
@@ -795,18 +785,21 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                     ui.Spacer()
 
     def _update_x_axis_labels(self, x_min, x_max, x_units, num_ticks=5):
+        tick_labels = []
         with ui.HStack(height=20, spacing=0):
             ui.Spacer(width=50)
             for i in range(num_ticks):
                 val = x_min + i * (x_max - x_min) / (num_ticks - 1)
                 with ui.VStack():
-                    ui.Label(f"{val:.2f}", alignment=ui.Alignment.CENTER, style={"font_size": 16})
+                    lbl = ui.Label(f"{val:.2f}", alignment=ui.Alignment.CENTER, style={"font_size": 16})
+                    tick_labels.append(lbl)
                 if i < num_ticks - 1:
                     ui.Spacer()
 
             with ui.VStack():
                 ui.Spacer()
                 ui.Label(x_units, alignment=ui.Alignment.CENTER, style={"font_size": 16})
+        return tick_labels
 
     def _draw_grid_lines(self, num_ticks=5):
         grid_color = cl("#6E6E6E")
