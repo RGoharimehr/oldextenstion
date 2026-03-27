@@ -647,12 +647,7 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
             self._plot_window = None
 
     def _rebuild_and_update_plot_window(self):
-        """Build the plot window and all plot widgets once, then refresh data.
-
-        Called when the user adds a new plot request (user action).  The polling
-        cycle must NOT call this method – it should call _update_plot_window_data()
-        instead so that only XY data is pushed into existing widgets.
-        """
+        """Open the plot window (creating it if needed) then rebuild its content."""
         if not self._plot_window or not self._plot_window.visible:
             self._plot_window = ui.Window(
                 "Simulation Plot",
@@ -660,11 +655,6 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                 height=700,
                 closed_fn=lambda: setattr(self, "_plot_window", None),
             )
-            # New window means all previously stored widget refs are stale – drop them.
-            for req in self._plot_requests:
-                req.pop("widgets_built", None)
-                req.pop("line_plots", None)
-                req.pop("x_tick_labels", None)
 
         history = self._FlownexMain.simulation_data_history
         if not history:
@@ -673,21 +663,17 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
                 ui.Label("No simulation data to plot.", alignment=ui.Alignment.CENTER, style={"font_size": 18})
             return
 
-        # Only do a full (expensive) rebuild when at least one request is missing its widgets.
-        all_built = all(req.get("widgets_built") is not None for req in self._plot_requests)
-        if not all_built:
-            with self._plot_window.frame:
-                self._plot_window.frame.clear()
-                with ui.ScrollingFrame():
-                    with ui.VStack(spacing=20, style={"padding": 10}):
-                        for i, request in enumerate(self._plot_requests):
-                            ui.Separator()
-                            self._build_single_plot_group(i, request)
-
-        # Refresh data in existing plot widgets (lightweight).
         self._update_plot_window_data()
 
     def _update_plot_window_data(self):
+        """Rebuild all plot groups with the latest simulation data.
+
+        Called both when a new plot request is added (via _rebuild_and_update_plot_window)
+        and on every polling cycle so that the displayed data always reflects the
+        current sliding window of simulation history.  ui.Plot widgets are recreated
+        fresh each call rather than updated in-place because set_xy_data() alone does
+        not trigger a visual re-render.
+        """
         if not self._plot_window or not self._plot_window.visible:
             return
 
@@ -695,49 +681,19 @@ class SimReadyPhysicsExtension(omni.ext.IExt):
         if not history:
             return
 
-        for request in self._plot_requests:
-            if not request.get("widgets_built"):
-                continue
+        # Drop stale widget refs so _build_single_plot_group creates new ones.
+        for req in self._plot_requests:
+            req.pop("widgets_built", None)
+            req.pop("line_plots", None)
+            req.pop("x_tick_labels", None)
 
-            x_key = request["x_axis_key"]
-            y_keys = request["y_axis_keys"]
-            recent_history = history[-100:]
-
-            # Recalculate x-axis range from latest data
-            x_values = [d.get(x_key, 0) for d in recent_history]
-            x_data_min = min(x_values) if x_values else 0.0
-            x_data_max = max(x_values) if x_values else 1.0
-            if x_data_max == x_data_min:
-                x_data_max += 1.0
-            x_padding = (x_data_max - x_data_min) * 0.05
-            x_scale_min = x_data_min - x_padding
-            x_scale_max = x_data_max + x_padding
-
-            # Update x-axis tick labels to reflect the current time range
-            tick_labels = request.get("x_tick_labels", [])
-            num_ticks = len(tick_labels)
-            if num_ticks > 1:
-                for i, lbl in enumerate(tick_labels):
-                    val = x_scale_min + i * (x_scale_max - x_scale_min) / (num_ticks - 1)
-                    lbl.text = f"{val:.2f}"
-
-            # Recalculate y-axis range from latest data
-            all_y_values = []
-            for key in y_keys:
-                all_y_values.extend([d.get(key, 0) for d in recent_history])
-            y_data_min = min(all_y_values) if all_y_values else 0.0
-            y_data_max = max(all_y_values) if all_y_values else 1.0
-            y_data_max = max(y_data_max, y_data_min + 0.1)
-            y_padding = (y_data_max - y_data_min) * 0.05
-            y_scale_min = y_data_min - y_padding
-            y_scale_max = y_data_max + y_padding
-
-            # Update each plot line with new XY data and y-axis scale
-            for y_key, line_plot in request.get("line_plots", {}).items():
-                data = [(d.get(x_key, 0), d.get(y_key, 0)) for d in recent_history]
-                line_plot.set_xy_data(data)
-                line_plot.scale_min = y_scale_min
-                line_plot.scale_max = y_scale_max
+        with self._plot_window.frame:
+            self._plot_window.frame.clear()
+            with ui.ScrollingFrame():
+                with ui.VStack(spacing=20, style={"padding": 10}):
+                    for i, request in enumerate(self._plot_requests):
+                        ui.Separator()
+                        self._build_single_plot_group(i, request)
 
 
     def _build_single_plot_group(self, index, request):
